@@ -1,10 +1,8 @@
-import pyaudio
 import wave
 import os
 import shutil
-from scipy import signal, interpolate
+from scipy import signal
 import numpy as np
-import matplotlib.pyplot as plt
 """
 http://www.repository.voxforge1.org/downloads/SpeechCorpus/Trunk/Audio/Original/44.1kHz_16bit/
 Start with chunking VoxAudio clips into 1 second clips
@@ -13,7 +11,7 @@ Start with chunking VoxAudio clips into 1 second clips
 
 """
 https://www.kaggle.com/kongaevans/speaker-recognition-dataset/download
-1. Resample Kaggle set from 16kHz to 44100kHz
+1. Resample Kaggle set from 16kHz to 44.1kHz
 2. Transform non-1sec clips into 1 second clips
 """
 kaggle_root = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches"
@@ -26,6 +24,8 @@ vox_dumps = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206_dump\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524_dump\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523_dump\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe_dump\\wav"]
+nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
+nick_dump = "C:\\Users\\NWerblun\\Downloads\\nick_dump"
 
 
 def resample_and_resize(root):
@@ -78,7 +78,7 @@ def _split_file(root, fname, file_len):
     for ind, row in enumerate(audio_data):
         new_fname = os.path.splitext(fname)[0] + "_" + str(ind) + os.path.splitext(fname)[1]
         f = wave.open(os.path.join(root, new_fname), "wb")
-        f.setparams((ch, sw, fs, len(row), "NONE", "not compressed"))
+        f.setparams((1, sw, fs, len(row), "NONE", "not compressed"))
         f.writeframes(row.astype(np.int16).tobytes())
         f.close()
     os.remove(os.path.join(root, fname))
@@ -105,8 +105,18 @@ def _downsample(root, fname, new_fs):
 
     new_samp_width = old_samp_width
     audio_data = np.frombuffer(f.readframes(old_num_frames), dtype=tp).astype(np.float32)
-    new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
-    new_len = len(audio_data)
+    if channels == 2:
+        #Split l/r channels
+        new_l = signal.resample_poly(audio_data[::2], new_fs, old_framerate, window=3.7)
+        new_r = signal.resample_poly(audio_data[1::2], new_fs, old_framerate, window=3.7)
+        new_audio_data = np.zeros(audio_data.shape)
+        new_audio_data[::2] = new_l
+        new_audio_data[1::2] = new_r
+    elif ch > 2:
+        raise ValueError("Cannot handle more than 2 channel audio")
+    else:
+        new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
+    new_len = len(new_audio_data)
     new_audio_data = new_audio_data.astype(np.int16).tobytes()
     f.close()
 
@@ -128,8 +138,19 @@ def _upsample(root, fname, new_fs):
 
     new_samp_width = old_samp_width
     audio_data = np.frombuffer(f.readframes(old_num_frames), dtype=tp).astype(np.float32)
-    new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
-    new_len = len(audio_data)
+    if channels == 2:
+        #Split l/r channels
+        new_l = signal.resample_poly(audio_data[::2], new_fs, old_framerate, window=3.7)
+        new_r = signal.resample_poly(audio_data[1::2], new_fs, old_framerate, window=3.7)
+        new_audio_data = np.zeros(audio_data.shape)
+        new_audio_data[::2] = new_l
+        new_audio_data[1::2] = new_r
+    elif ch > 2:
+        raise ValueError("Cannot handle more than 2 channel audio")
+    else:
+        new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
+
+    new_len = len(new_audio_data)
     new_audio_data = new_audio_data.astype(np.int16).tobytes()
     f.close()
 
@@ -138,9 +159,12 @@ def _upsample(root, fname, new_fs):
     f.writeframes(new_audio_data)
     f.close()
 
-
+"""
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
     resample_and_resize(dump_dir)
+
+shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
+resample_and_resize(nick_dump)

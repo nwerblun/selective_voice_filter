@@ -21,7 +21,7 @@ fs = 44100
 seconds = 5
 print("recording now")
 f1, f2 = 20, 21000
-window = signal.firwin(3, [f1, f2], pass_zero=False, fs=44100)
+window = signal.firwin(3, [f1, f2], pass_zero=False, fs=fs)
 def callback(in_data, frame_count, time_info, status_flags):
     in_data_np = np.frombuffer(in_data, dtype=np.int16).astype(np.float32)
     #print("len of in data ", str(len(in_data)))
