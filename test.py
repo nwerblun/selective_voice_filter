@@ -32,12 +32,19 @@ def callback(in_data, frame_count, time_info, status_flags):
     #print("shape of filtered", str(filtered.shape))
     return (out_data.astype(np.int16).tobytes(), pyaudio.paContinue)
 
+"""
+Write to VB cable input, and it gets carried to VB cable output. Use VB cable output as the discord input
+{'index': 10, 'structVersion': 2, 'name': 'CABLE Input (VB-Audio Virtual C', 'hostApi': 0, 'maxInputChannels': 0, 'maxOutputChannels': 8,
+'defaultLowInputLatency': 0.09, 'defaultLowOutputLatency': 0.09, 'defaultHighInputLatency': 0.18,
+'defaultHighOutputLatency': 0.18, 'defaultSampleRate': 44100.0}
+"""
 stream = pa.open(format=sample_format,
                     channels=channels,
                     rate=fs,
                     frames_per_buffer=chunk_size,
                     input=True,
                     output=True,
+                    output_device_index=10,
                     stream_callback=callback)
 try:
     print("* echoing")
