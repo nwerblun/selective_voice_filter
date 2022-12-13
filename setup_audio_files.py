@@ -159,7 +159,7 @@ def _upsample(root, fname, new_fs):
     f.writeframes(new_audio_data)
     f.close()
 
-"""
+
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
