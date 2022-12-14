@@ -26,17 +26,19 @@ vox_dumps = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206_dump\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe_dump\\wav"]
 nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
 nick_dump = "C:\\Users\\NWerblun\\Downloads\\nick_dump"
+zhe_root = "C:\\Users\\NWerblun\\Downloads\\zhe"
+zhe_dump = "C:\\Users\\NWerblun\\Downloads\\zhe_dump"
 
 
-def resample_and_resize(root):
+def resample_and_resize(root, new_len=1):
     _, subdirs, filenames = next(os.walk(root))
     for f in filenames:
         if os.path.splitext(f)[1] == ".wav":
-            up_dn_sample_and_split(root, f, 44100)
+            up_dn_sample_and_split(root, f, 44100, new_len)
     for s in subdirs:
-        resample_and_resize(os.path.join(root, s))
+        resample_and_resize(os.path.join(root, s), new_len)
 
-def up_dn_sample_and_split(root, fname, new_fs, file_len=1):
+def up_dn_sample_and_split(root, fname, new_fs, file_len):
     #File len is desired length in seconds. It will be split up if longer.
     _up_dn_sample(root, fname, new_fs)
     _split_file(root, fname, file_len)
@@ -48,6 +50,8 @@ def _split_file(root, fname, file_len):
     if (nf/fs == file_len):
         #print("File length ok, skipping")
         return
+    if fs*file_len - int(fs*file_len) > 0:
+        print("file length will be changed to {} to match sampling freq.".format(int(fs*file_len)/fs))
     ch = f.getnchannels()
     sw = f.getsampwidth()
     audio_data = np.frombuffer(f.readframes(nf), dtype=np.int16).astype(np.float32)
@@ -59,21 +63,18 @@ def _split_file(root, fname, file_len):
         raise ValueError("Cannot handle more than 2 channel audio")
     audio_data = audio_data.reshape(1, nf)
     f.close()
-
     extra_zeros = 0
     to_pad = 0
     if nf/fs < file_len:
         print("need to zero pad to reach desired file length")
         extra_zeros = (file_len * fs) - fs*(nf//fs)
-    if int((nf % fs) > 0):
-        print("padding a few zeros to reach a multiple of the samp. freq.")
-        to_pad = fs - (nf%fs)
-    padded = np.zeros((1, nf+to_pad+extra_zeros))
-    padded[:,:nf] = audio_data
-    audio_data = padded
-    #can't use nf here because len may have changed if it was padded.
-    #Also it's a matrix so row 1 is element 0
-    audio_data = np.reshape(audio_data, (len(audio_data[0])//fs, fs))
+    if nf % (fs*file_len) > 0:
+        print("padding a few zeros to reach a multiple of the fs*file_len")
+        to_pad = int(fs*file_len - (nf%(fs*file_len)))
+    padded = np.zeros((1, audio_data.shape[1]+to_pad+extra_zeros))
+    padded[:,:audio_data.shape[1]] = audio_data
+    #Make each col. = file_len seconds of data
+    audio_data = np.reshape(padded, (padded.shape[1]//int(fs*file_len), int(fs*file_len)))
     #write each row as a new file
     for ind, row in enumerate(audio_data):
         new_fname = os.path.splitext(fname)[0] + "_" + str(ind) + os.path.splitext(fname)[1]
@@ -161,10 +162,12 @@ def _upsample(root, fname, new_fs):
 
 
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
-resample_and_resize(kaggle_dump)
+resample_and_resize(kaggle_dump, 0.5)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
-    resample_and_resize(dump_dir)
+    resample_and_resize(dump_dir, 0.5)
 
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
-resample_and_resize(nick_dump)
+resample_and_resize(nick_dump, 0.5)
+shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
+resample_and_resize(zhe_dump, 0.5)
