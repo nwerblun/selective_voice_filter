@@ -112,7 +112,7 @@ def _downsample(root, fname, new_fs):
         new_audio_data = np.zeros(audio_data.shape)
         new_audio_data[::2] = new_l
         new_audio_data[1::2] = new_r
-    elif ch > 2:
+    elif channels > 2:
         raise ValueError("Cannot handle more than 2 channel audio")
     else:
         new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
@@ -145,7 +145,7 @@ def _upsample(root, fname, new_fs):
         new_audio_data = np.zeros(audio_data.shape)
         new_audio_data[::2] = new_l
         new_audio_data[1::2] = new_r
-    elif ch > 2:
+    elif channels > 2:
         raise ValueError("Cannot handle more than 2 channel audio")
     else:
         new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
