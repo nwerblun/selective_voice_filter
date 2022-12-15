@@ -36,6 +36,7 @@ EPOCHS = 100
 FILE_LEN = 1 #seconds
 FS = 44100 #Hz
 
+#Helper method just so I can listen to some data.
 def _dump_to_file(ds):
     me_flag = 0
     not_me_flag = 0
@@ -54,7 +55,7 @@ def _dump_to_file(ds):
             f.writeframes(tup[0].astype(np.int16).tobytes())
             f.close()
             not_me_flag = 1
-
+#Helper to verify that the labels match the directory name
 def _test_correct_labels(file_paths, labels, name="set"):
     errors = 0
     correct = 0
@@ -76,7 +77,7 @@ def _test_correct_labels(file_paths, labels, name="set"):
 
 def get_audio_from_path(file_path):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
-    #str comes in as a bytes object, need to decode.
+    #np converted str comes in as a bytes object, need to decode.
     f = wave.open(file_path.numpy().decode('utf-8'), "rb")
     data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
     f.close()
@@ -93,7 +94,7 @@ def add_noise(audio_data, noise_paths, scale_max=0.5):
     ind = np.random.randint(0, len(noise_paths))
     scale = np.random.uniform(0, scale_max)
     #Since using Datasets, input will come in as a tensor object. Convert to np.
-    #str comes in as a bytes object, need to decode.
+    #np str comes in as a bytes object, need to decode.
     f = wave.open(noise_paths[ind].numpy().decode('utf-8'), "rb")
     noise_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
     prop =  np.max(audio_data.numpy()) / np.max(noise_data) # how much louder is audio
@@ -104,6 +105,7 @@ def get_fft(audio):
     fft = np.fft.fft(audio.numpy())
     #keep only pos half of mag. spec.
     fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
+    #Reshaping to make tf happy
     return tf.convert_to_tensor(fft.reshape((fft.shape[0],1)))
 
 """
@@ -170,7 +172,7 @@ num_valid_samples = len(valid_audio_paths)
 print("{} training samples and {} valid samples".format(num_train_samples,  num_valid_samples))
 
 
-
+#Use a seed to make sure they are shuffled the same and the labels still match
 rng = np.random.RandomState(SHUFFLE_SEED)
 rng.shuffle(train_audio_paths)
 rng = np.random.RandomState(SHUFFLE_SEED)
@@ -203,6 +205,15 @@ valid_ds = valid_ds.map(
     num_parallel_calls=tf.data.AUTOTUNE
 )
 
+"""
+Very important that repeat comes before batching. These are execution graphs,
+not executed at runtime, so it doesn't happen until it's needed.
+If your data is something like [1,2,3...,10] and you batch by 3 then you get
+[1,2,3], [4,5,6], [7,8,9], [10]
+the last will give you an error when going into the network. Repeating after
+just copies the [10] instead of extending it. So repeat first, then batch to get
+[1,2,3], [4,5,6], [7,8,9], [10,1,2]...etc
+"""
 train_ds = train_ds.shuffle(buffer_size=BATCH_SIZE * 16, seed=SHUFFLE_SEED).repeat().batch(BATCH_SIZE)
 valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 16, seed=SHUFFLE_SEED).repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
 
@@ -230,6 +241,8 @@ else:
             keras.layers.Dense(1, activation=None, name="output")
         ]
     )
+#Final activation is none since I'm using logits and they need to range
+#from -inf to inf
 
 model.summary()
 #Switch to logits instead of [0,1]
