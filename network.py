@@ -188,7 +188,6 @@ train_ds = to_ds(train_audio_paths, train_labels)
 valid_ds = to_ds(valid_audio_paths, valid_labels)
 
 # Add noise to the training set
-#TODO: Remove the comments that block out the autotune things. I cancelled them so I could debug
 train_ds = train_ds.map(
     lambda x, y: (tf.py_function(add_noise, [x, noise_paths, NOISE_SCALE_MAX], tf.float32), y),
     num_parallel_calls=tf.data.AUTOTUNE,
