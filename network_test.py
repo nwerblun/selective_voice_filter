@@ -4,7 +4,18 @@ import tensorflow as tf
 from tensorflow import keras
 import wave
 
-model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
+from_h5 = True
+from_json = not from_h5
+
+if from_h5:
+    model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
+if from_json:
+    f = open("model_arch.json", "r")
+    model_text = f.read()
+    f.close()
+    model = keras.models.model_from_json(model_text)
+    model.load_weights("model_weights.h5")
+
 model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 roots = [r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\delibab-20071029_dump", r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\nick_test_dump"]
 all_files = []

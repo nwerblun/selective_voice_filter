@@ -163,18 +163,16 @@ def _upsample(root, fname, new_fs):
     f.setparams((channels, new_samp_width, new_fs, new_len, "NONE", "not compressed"))
     f.writeframes(new_audio_data)
     f.close()
-"""
+
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump, 1)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
     resample_and_resize(dump_dir, 1)
-"""
+
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
 resample_and_resize(nick_dump, 1)
-"""
 shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
 resample_and_resize(zhe_dump, 1)
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
 resample_and_resize(nick_test_dump, 1)
-"""

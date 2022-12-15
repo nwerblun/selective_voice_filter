@@ -233,6 +233,7 @@ else:
     )
 
 model.summary()
+#Switch to logits instead of [0,1]
 model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), optimizer="adam", metrics=["accuracy"])
 #model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
@@ -245,7 +246,7 @@ backup_cb = keras.callbacks.BackupAndRestore(backup_dir=".\\tmp\\backup")
 
 history = model.fit(
     train_ds,
-    epochs=EPOCHS, #Idk I just want it to stop crashing from running out of data
+    epochs=EPOCHS,
     validation_data=valid_ds,
     callbacks=[early_cb, mid_cb, backup_cb],
     steps_per_epoch=num_train_samples//BATCH_SIZE,
