@@ -30,11 +30,49 @@ NOISE_DATASET_PATH = ROOT_DATASET_PATH+"\\noise_data"
 ACCEPTED_SPEAKER_FOLDER_NAMES = ["nick_dump"]
 VALIDATION_SPLIT = 0.2 #% of total to save for val.
 SHUFFLE_SEED = 152
-NOISE_SCALE_MAX = 0.7
-BATCH_SIZE = 128
-EPOCHS = 150
-FILE_LEN = 0.5 #seconds
+NOISE_SCALE_MAX = 0.4
+BATCH_SIZE = 64
+EPOCHS = 100
+FILE_LEN = 1 #seconds
 FS = 44100 #Hz
+
+def _dump_to_file(ds):
+    me_flag = 0
+    not_me_flag = 0
+    for tup in ds.as_numpy_iterator():
+        if me_flag and not_me_flag:
+            break
+        if tup[1] == 1 and not me_flag:
+            f = wave.open(".\\test_me.wav", "wb")
+            f.setparams((1, 2, FS, len(tup[0]), "NONE", "not compressed"))
+            f.writeframes(tup[0].astype(np.int16).tobytes())
+            f.close()
+            me_flag = 1
+        elif tup[1] == 0 and not not_me_flag:
+            f = wave.open(".\\test_not_me.wav", "wb")
+            f.setparams((1, 2, FS, len(tup[0]), "NONE", "not compressed"))
+            f.writeframes(tup[0].astype(np.int16).tobytes())
+            f.close()
+            not_me_flag = 1
+
+def _test_correct_labels(file_paths, labels, name="set"):
+    errors = 0
+    correct = 0
+    wrong = []
+    print("checking for label errors...")
+    for ind, tup in enumerate(zip(file_paths, labels)):
+        #print("checking {} and label {}".format(tup[0], tup[1]))
+        if "nick_dump" in tup[0] and tup[1] != 1:
+            wrong += [tup]
+            errors += 1
+        elif not ("nick_dump" in tup[0]) and tup[0] == 1:
+            wrong += [tup]
+            errors += 1
+        else:
+            correct += 1
+
+    print("Found {} errors and {} correct in {}.".format(errors, correct, name))
+    return errors == 0 and correct == len(file_paths)
 
 def get_audio_from_path(file_path):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
@@ -124,10 +162,14 @@ train_labels = [0]*len(audio_paths[:-num_split]) + [1]*len(accepted_speaker_audi
 valid_labels = [0]*len(audio_paths[-num_split:]) + [1]*len(accepted_speaker_audio_paths[-num_split2:])
 assert len(train_audio_paths) == len(train_labels)
 assert len(valid_audio_paths) == len(valid_labels)
+assert _test_correct_labels(train_audio_paths, train_labels, "pre-shuffle train set")
+assert _test_correct_labels(valid_audio_paths, valid_labels, "pre-shuffle valid set")
 
 num_train_samples = len(train_audio_paths)
 num_valid_samples = len(valid_audio_paths)
 print("{} training samples and {} valid samples".format(num_train_samples,  num_valid_samples))
+
+
 
 rng = np.random.RandomState(SHUFFLE_SEED)
 rng.shuffle(train_audio_paths)
@@ -138,6 +180,9 @@ rng = np.random.RandomState(SHUFFLE_SEED*2)
 rng.shuffle(valid_audio_paths)
 rng = np.random.RandomState(SHUFFLE_SEED*2)
 rng.shuffle(valid_labels)
+
+assert _test_correct_labels(train_audio_paths, train_labels, "post-shuffle train set")
+assert _test_correct_labels(valid_audio_paths, valid_labels, "post-shuffle valid set")
 
 train_ds = to_ds(train_audio_paths, train_labels)
 valid_ds = to_ds(valid_audio_paths, valid_labels)
@@ -165,44 +210,46 @@ valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 16, s
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
 input_shape = (int(FS*FILE_LEN/2),1)
-model = keras.Sequential(
-    [
-        keras.Input(shape=input_shape, name="Input"),
-        keras.layers.Conv1D(16, kernel_size=3, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Conv1D(32, kernel_size=3, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Conv1D(64, kernel_size=3, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Conv1D(128, kernel_size=3, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Flatten(),
-        keras.layers.Dropout(0.3),
-        keras.layers.Dense(128, activation="relu"),
-        keras.layers.Dense(32, activation="relu"),
-        keras.layers.Dense(8, activation="relu"),
-        keras.layers.Dense(1, activation="softmax", name="output")
-    ]
-)
+
+if os.path.exists("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5"):
+    model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
+else:
+    model = keras.Sequential(
+        [
+            keras.Input(shape=input_shape, name="Input"),
+            keras.layers.Conv1D(16, kernel_size=4, activation="relu", padding="same"),
+            keras.layers.MaxPool1D(pool_size=2, strides=2),
+            keras.layers.Dropout(0.15),
+            keras.layers.Conv1D(32, kernel_size=4, activation="relu", padding="same"),
+            keras.layers.MaxPool1D(pool_size=2, strides=2),
+            keras.layers.Dropout(0.1),
+            keras.layers.Conv1D(64, kernel_size=3, activation="relu", padding="same"),
+            keras.layers.MaxPool1D(pool_size=2, strides=2),
+            keras.layers.Flatten(),
+            keras.layers.Dense(64, activation="relu"),
+            keras.layers.Dense(16, activation="relu"),
+            keras.layers.Dense(1, activation=None, name="output")
+        ]
+    )
 
 model.summary()
-
-model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), optimizer="adam", metrics=["accuracy"])
+#model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
 model_save_filename = "model.h5"
 early_cb = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
 mid_cb = keras.callbacks.ModelCheckpoint(
     model_save_filename, monitor="val_accuracy", save_best_only=True
 )
-
+backup_cb = keras.callbacks.BackupAndRestore(backup_dir=".\\tmp\\backup")
 
 history = model.fit(
     train_ds,
     epochs=EPOCHS, #Idk I just want it to stop crashing from running out of data
     validation_data=valid_ds,
-    callbacks=[early_cb, mid_cb],
+    callbacks=[early_cb, mid_cb, backup_cb],
     steps_per_epoch=num_train_samples//BATCH_SIZE,
     validation_steps=num_valid_samples//int(BATCH_SIZE*VALIDATION_SPLIT)
 )
 
-print("Evaluation", model.evaluate(valid_ds))
+print("Evaluation", model.evaluate(valid_ds, steps=num_valid_samples//int(BATCH_SIZE*VALIDATION_SPLIT)))

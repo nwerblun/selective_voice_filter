@@ -19,15 +19,19 @@ kaggle_dump = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches_dump"
 vox_roots = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523\\wav", \
-            "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe\\wav"]
-vox_dumps = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206_dump\\wav", \
-            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524_dump\\wav", \
-            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523_dump\\wav", \
-            "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe_dump\\wav"]
+            "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe\\wav", \
+            "C:\\Users\\NWerblun\\Downloads\\delibab-20071029\\wav"]
+vox_dumps = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206_dump\\", \
+            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524_dump\\", \
+            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523_dump\\", \
+            "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe_dump\\", \
+            "C:\\Users\\NWerblun\\Downloads\\delibab-20071029_dump\\"]
 nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
 nick_dump = "C:\\Users\\NWerblun\\Downloads\\nick_dump"
 zhe_root = "C:\\Users\\NWerblun\\Downloads\\zhe"
 zhe_dump = "C:\\Users\\NWerblun\\Downloads\\zhe_dump"
+nick_test_root = "C:\\Users\\NWerblun\\Downloads\\nick_test"
+nick_test_dump = "C:\\Users\\NWerblun\\Downloads\\nick_test_dump"
 
 
 def resample_and_resize(root, new_len=1):
@@ -159,15 +163,18 @@ def _upsample(root, fname, new_fs):
     f.setparams((channels, new_samp_width, new_fs, new_len, "NONE", "not compressed"))
     f.writeframes(new_audio_data)
     f.close()
-
-
+"""
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
-resample_and_resize(kaggle_dump, 0.5)
+resample_and_resize(kaggle_dump, 1)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
-    resample_and_resize(dump_dir, 0.5)
-
+    resample_and_resize(dump_dir, 1)
+"""
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
-resample_and_resize(nick_dump, 0.5)
+resample_and_resize(nick_dump, 1)
+"""
 shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
-resample_and_resize(zhe_dump, 0.5)
+resample_and_resize(zhe_dump, 1)
+shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
+resample_and_resize(nick_test_dump, 1)
+"""
