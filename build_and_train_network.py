@@ -27,6 +27,7 @@ Input shape = ()
 ROOT_DATASET_PATH = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data"
 VOICE_DATASET_PATH = ROOT_DATASET_PATH+"\\voice_data"
 NOISE_DATASET_PATH = ROOT_DATASET_PATH+"\\noise_data"
+SILENCE_DATASET_PATH = ROOT_DATASET_PATH+"\\silence_data"
 ACCEPTED_SPEAKER_FOLDER_NAMES = ["nick_dump"]
 VALIDATION_SPLIT = 0.2 #% of total to save for val.
 SHUFFLE_SEED = 152
@@ -62,11 +63,11 @@ def _test_correct_labels(file_paths, labels, name="set"):
     wrong = []
     print("checking for label errors...")
     for ind, tup in enumerate(zip(file_paths, labels)):
-        #print("checking {} and label {}".format(tup[0], tup[1]))
-        if "nick_dump" in tup[0] and tup[1] != 1:
+        fpth, _ = os.path.split(tup[0])
+        if "nick_dump" in fpth and tup[1] != 1:
             wrong += [tup]
             errors += 1
-        elif not ("nick_dump" in tup[0]) and tup[0] == 1:
+        elif not ("nick_dump" in fpth) and tup[0] == 1:
             wrong += [tup]
             errors += 1
         else:
@@ -118,6 +119,7 @@ NOISE_ROOT/
 ....noise1.wav
 etc.
 """
+print("Loading noise directories...")
 noise_paths = []
 _, subdirs, _ = next(os.walk(NOISE_DATASET_PATH))
 for s in subdirs:
@@ -135,10 +137,22 @@ VOICE_ROOT/
 ..speaker2/
 ....file1.wav
 etc.
+
+Silence directory should be
+SILENCE_ROOT/
+..silence1.wav
+..silence2.wav
+etc.
 """
+print("Scanning audio files. Separating into categories and scanning for silence...")
 audio_paths = []
 accepted_speaker_audio_paths = []
+_, _, filenames = next(os.walk(SILENCE_DATASET_PATH))
+for f in filenames:
+    if os.path.splitext(f)[1] == ".wav":
+        audio_paths += [os.path.join(SILENCE_DATASET_PATH, f)]
 
+print("Detected {} silence clips. Moving on to speaking clips.".format(len(audio_paths)))
 _, subdirs, _ = next(os.walk(VOICE_DATASET_PATH))
 for s in subdirs:
     _, _, filenames = next(os.walk(os.path.join(VOICE_DATASET_PATH, s)))

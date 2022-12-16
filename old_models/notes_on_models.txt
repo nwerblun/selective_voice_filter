@@ -1,0 +1,2 @@
+Model 0: first attempt. Contained corrupted audio files, so it was canned.
+Model 1: Works quite well, but thinks silence is me talking. When operating in real time this leads to constant toggling of mute when there's natural silence.
