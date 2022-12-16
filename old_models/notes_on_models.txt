@@ -1,2 +1,6 @@
-Model 0: first attempt. Contained corrupted audio files, so it was canned.
-Model 1: Works quite well, but thinks silence is me talking. When operating in real time this leads to constant toggling of mute when there's natural silence.
+Model Arch:
+0: unchanged, but retrained with new data for gen 1.
+
+Model Weights:
+0: Corrupted audio data
+1: Re-trained with bad audio removed
