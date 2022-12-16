@@ -32,7 +32,8 @@ zhe_root = "C:\\Users\\NWerblun\\Downloads\\zhe"
 zhe_dump = "C:\\Users\\NWerblun\\Downloads\\zhe_dump"
 nick_test_root = "C:\\Users\\NWerblun\\Downloads\\nick_test"
 nick_test_dump = "C:\\Users\\NWerblun\\Downloads\\nick_test_dump"
-
+silence_test_root = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
+silence_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\silence_data"
 
 def resample_and_resize(root, new_len=1):
     _, subdirs, filenames = next(os.walk(root))
@@ -46,6 +47,16 @@ def up_dn_sample_and_split(root, fname, new_fs, file_len):
     #File len is desired length in seconds. It will be split up if longer.
     _up_dn_sample(root, fname, new_fs)
     _split_file(root, fname, file_len)
+
+def move_silent_clips(root, dump_loc):
+    _, subdirs, _ = next(os.walk(root))
+    for s in subdirs:
+        _,_,filenames = next(os.walk(os.path.join(root, s)))
+        for f in filenames:
+            if os.path.splitext(f)[1] == ".wav":
+                if _is_silent(os.path.join(root, s, f)):
+                    new_fname = s+"_"+f
+                    os.replace(os.path.join(root, s, f), os.path.join(dump_loc, new_fname))
 
 def _split_file(root, fname, file_len):
     f = wave.open(os.path.join(root, fname), "rb")
@@ -97,6 +108,8 @@ def _up_dn_sample(root, fname, new_fs):
     else:
         _upsample(root, fname, new_fs)
 
+#After all the changes, up/dn sample are basically the same function now.
+#It works though so I don't want to remove one yet.
 def _downsample(root, fname, new_fs):
     f = wave.open(os.path.join(root, fname), "rb")
     channels = f.getnchannels()
@@ -164,6 +177,16 @@ def _upsample(root, fname, new_fs):
     f.writeframes(new_audio_data)
     f.close()
 
+def _is_silent(file_path):
+    f = wave.open(file_path, "rb")
+    audio_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
+    #2^Num_bits is largest ADC val. Half for pos, half for neg, so /2
+    max_possible = (2**(8*f.getsampwidth()))/2
+    f.close()
+    rms = np.sqrt(np.mean(audio_data**2))
+    dBFS = 10*np.log10(rms/max_possible)
+    return dBFS <= -19
+
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump, 1)
 for dir, dump_dir in zip(vox_roots, vox_dumps):
@@ -176,3 +199,6 @@ shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
 resample_and_resize(zhe_dump, 1)
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
 resample_and_resize(nick_test_dump, 1)
+
+#Go through everything again and detect if it's a clip of silence.
+move_silent_clips(silence_test_root, silence_dump)
