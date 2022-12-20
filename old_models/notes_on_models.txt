@@ -1,6 +1,8 @@
 Model Arch:
 0: unchanged, but retrained with new data for gen 1.
+1: Pretty sure it's the same as 0.
 
 Model Weights:
 0: Corrupted audio data
 1: Re-trained with bad audio removed
+2: Re-trained with extra silence clips to try and identify silence

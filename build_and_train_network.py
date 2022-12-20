@@ -128,6 +128,11 @@ for s in subdirs:
         if os.path.splitext(f)[1] == ".wav":
             noise_paths += [os.path.join(NOISE_DATASET_PATH, s, f)]
 
+#Randomly set aside a few noise paths for testing and not just corrupting clips
+rng = np.random.RandomState(SHUFFLE_SEED*12)
+rng.shuffle(noise_paths)
+noise_for_test = noise_paths[:150]
+noise_paths = noise_paths[150:]
 """
 Makes an assumption that the voice directory is structured as:
 VOICE_ROOT/
@@ -163,8 +168,10 @@ for s in subdirs:
             else:
                 audio_paths += [os.path.join(VOICE_DATASET_PATH, s, f)]
 
+#Combine testing noise paths to audio clips
+audio_paths = audio_paths + noise_for_test
 print("Noise paths contains {} files in {} directories.".format(len(noise_paths), len(os.listdir(NOISE_DATASET_PATH))))
-print("Voice paths contains {} files belonging to {} speakers.".format(len(audio_paths), len(os.listdir(VOICE_DATASET_PATH))))
+print("Voice paths contains {} files.".format(len(audio_paths)))
 print("Found {} clips from the accepted speaker.".format(len(accepted_speaker_audio_paths)))
 
 #Split into two sets
@@ -235,27 +242,50 @@ train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
 input_shape = (int(FS*FILE_LEN/2),1)
 
-if os.path.exists("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5"):
-    model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
-else:
-    model = keras.Sequential(
-        [
-            keras.Input(shape=input_shape, name="Input"),
-            keras.layers.Conv1D(16, kernel_size=4, activation="relu", padding="same"),
-            keras.layers.MaxPool1D(pool_size=2, strides=2),
-            keras.layers.Dropout(0.15),
-            keras.layers.Conv1D(32, kernel_size=4, activation="relu", padding="same"),
-            keras.layers.MaxPool1D(pool_size=2, strides=2),
-            keras.layers.Dropout(0.1),
-            keras.layers.Conv1D(64, kernel_size=3, activation="relu", padding="same"),
-            keras.layers.MaxPool1D(pool_size=2, strides=2),
-            keras.layers.Flatten(),
-            keras.layers.Dense(64, activation="relu"),
-            keras.layers.Dense(16, activation="relu"),
-            keras.layers.Dense(1, activation=None, name="output")
-        ]
-    )
-#Final activation is none since I'm using logits and they need to range
+"""
+model = keras.Sequential(
+    [
+        keras.Input(shape=input_shape, name="Input"),
+        keras.layers.Conv1D(16, kernel_size=4, activation="relu", padding="same"),
+        keras.layers.MaxPool1D(pool_size=2, strides=2),
+        keras.layers.Dropout(0.15),
+        keras.layers.Conv1D(32, kernel_size=4, activation="relu", padding="same"),
+        keras.layers.MaxPool1D(pool_size=2, strides=2),
+        keras.layers.Dropout(0.1),
+        keras.layers.Conv1D(64, kernel_size=3, activation="relu", padding="same"),
+        keras.layers.MaxPool1D(pool_size=2, strides=2),
+        keras.layers.Flatten(),
+        keras.layers.Dense(64, activation="relu"),
+        keras.layers.Dense(16, activation="relu"),
+        keras.layers.Dense(1, activation=None, name="output")
+    ]
+)
+"""
+def _make_layer_helper(inp, conv_filt):
+    s1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
+    l1 = keras.layers.Activation("relu")(l1)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
+    l1 = keras.layers.Activation("relu")(l1)
+    l1 = keras.layers.Add()[l1, s1]
+    l1 = keras.layers.Activation("relu")(l1)
+    return keras.layers.MaxPool1D(pool_size=2, strides=2)(l1)
+
+#Attempt 2, non-sequential.
+inp = keras.layers.Input(shape=input_shape, name="Input")
+lrs = make_layer_helper(inp, 16)
+lrs = keras.layers.Dropout(0.1)(lrs)
+lrs = make_layer_helper(lrs, 32)
+lrs = make_layer_helper(lrs, 64)
+lrs = make_layer_helper(lrs, 128)
+lrs = keras.layers.AveragePooling1D(pool_size=4, strides=4)(lrs)
+lrs = keras.layers.Dropout(0.15)(lrs)
+lrs = keras.layers.Flatten()(lrs)
+lrs = keras.layers.Dense(64, activation="relu")(lrs)
+lrs = keras.layers.Dense(16, activation="relu")(lrs)
+lrs = keras.layers.Dense(1, activation=None)(lrs)
+
+#Final activation is none since I'm using logits and they need to range \
 #from -inf to inf
 
 model.summary()

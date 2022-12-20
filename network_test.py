@@ -17,7 +17,14 @@ if from_json:
     model.load_weights("model_weights.h5")
 
 model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
-roots = [r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\delibab-20071029_dump", r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\nick_test_dump"]
+roots = [
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\delibab-20071029_dump", \
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\calamity-20071011-poe_dump", \
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\Jens_Stoltenberg", \
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\noise", \
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\silence", \
+        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\nick_test_dump"
+]
 all_files = []
 for dir in roots:
     _,_,filenames = next(os.walk(dir))
