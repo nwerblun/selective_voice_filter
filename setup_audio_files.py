@@ -184,8 +184,9 @@ def _is_silent(file_path):
     max_possible = (2**(8*f.getsampwidth()))/2
     f.close()
     rms = np.sqrt(np.mean(audio_data**2))
+    peak = np.max(audio_data)
     dBFS = 10*np.log10(rms/max_possible)
-    return dBFS <= -19
+    return dBFS <= -20
 
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump, 1)
