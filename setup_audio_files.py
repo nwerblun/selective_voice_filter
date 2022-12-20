@@ -15,37 +15,38 @@ https://www.kaggle.com/kongaevans/speaker-recognition-dataset/download
 2. Transform non-1sec clips into 1 second clips
 """
 kaggle_root = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches"
-kaggle_dump = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches_dump"
+kaggle_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
 vox_roots = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\delibab-20071029\\wav"]
-vox_dumps = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206_dump\\", \
-            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524_dump\\", \
-            "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523_dump\\", \
-            "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe_dump\\", \
-            "C:\\Users\\NWerblun\\Downloads\\delibab-20071029_dump\\"]
+vox_dumps = ["C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\mojomove411-20071206_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\chocoholic-20070524_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\chocoholic-20070523_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\calamity-20071011-poe_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\delibab-20071029_dump"]
 nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
-nick_dump = "C:\\Users\\NWerblun\\Downloads\\nick_dump"
+nick_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\nick_dump"
 zhe_root = "C:\\Users\\NWerblun\\Downloads\\zhe"
-zhe_dump = "C:\\Users\\NWerblun\\Downloads\\zhe_dump"
+zhe_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\zhe_dump"
 nick_test_root = "C:\\Users\\NWerblun\\Downloads\\nick_test"
-nick_test_dump = "C:\\Users\\NWerblun\\Downloads\\nick_test_dump"
+nick_test_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\test_data\\nick_test_dump"
 silence_test_root = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
 silence_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\silence_data"
+white_noise_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\noise_data\\white_noise"
 
 def resample_and_resize(root, new_len=1):
     _, subdirs, filenames = next(os.walk(root))
     for f in filenames:
         if os.path.splitext(f)[1] == ".wav":
-            up_dn_sample_and_split(root, f, 44100, new_len)
+            resample_and_split(root, f, 44100, new_len)
     for s in subdirs:
         resample_and_resize(os.path.join(root, s), new_len)
 
-def up_dn_sample_and_split(root, fname, new_fs, file_len):
+def resample_and_split(root, fname, new_fs, file_len):
     #File len is desired length in seconds. It will be split up if longer.
-    _up_dn_sample(root, fname, new_fs)
+    _resample(root, fname, new_fs)
     _split_file(root, fname, file_len)
 
 def move_silent_clips(root, dump_loc):
@@ -99,18 +100,7 @@ def _split_file(root, fname, file_len):
         f.close()
     os.remove(os.path.join(root, fname))
 
-def _up_dn_sample(root, fname, new_fs):
-    f = wave.open(os.path.join(root, fname), "rb")
-    old_fs = f.getframerate()
-    f.close()
-    if old_fs >= new_fs:
-        _downsample(root, fname, new_fs)
-    else:
-        _upsample(root, fname, new_fs)
-
-#After all the changes, up/dn sample are basically the same function now.
-#It works though so I don't want to remove one yet.
-def _downsample(root, fname, new_fs):
+def _resample(root, fname, new_fs):
     f = wave.open(os.path.join(root, fname), "rb")
     channels = f.getnchannels()
     old_num_frames, old_framerate, old_samp_width = f.getnframes(), f.getframerate(), f.getsampwidth()
@@ -134,40 +124,6 @@ def _downsample(root, fname, new_fs):
         raise ValueError("Cannot handle more than 2 channel audio")
     else:
         new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
-    new_len = len(new_audio_data)
-    new_audio_data = new_audio_data.astype(np.int16).tobytes()
-    f.close()
-
-    f = wave.open(os.path.join(root, fname), "wb")
-    f.setparams((channels, new_samp_width, new_fs, new_len, "NONE", "not compressed"))
-    f.writeframes(new_audio_data)
-    f.close()
-
-def _upsample(root, fname, new_fs):
-    f = wave.open(os.path.join(root, fname), "rb")
-    channels = f.getnchannels()
-    old_num_frames, old_framerate, old_samp_width = f.getnframes(), f.getframerate(), f.getsampwidth()
-
-    tp = np.int16
-    if old_samp_width == 1:
-        tp = np.int8
-    elif old_samp_width == 2:
-        tp = np.int16
-
-    new_samp_width = old_samp_width
-    audio_data = np.frombuffer(f.readframes(old_num_frames), dtype=tp).astype(np.float32)
-    if channels == 2:
-        #Split l/r channels
-        new_l = signal.resample_poly(audio_data[::2], new_fs, old_framerate, window=3.7)
-        new_r = signal.resample_poly(audio_data[1::2], new_fs, old_framerate, window=3.7)
-        new_audio_data = np.zeros(audio_data.shape)
-        new_audio_data[::2] = new_l
-        new_audio_data[1::2] = new_r
-    elif channels > 2:
-        raise ValueError("Cannot handle more than 2 channel audio")
-    else:
-        new_audio_data = signal.resample_poly(audio_data, new_fs, old_framerate, window=3.7)
-
     new_len = len(new_audio_data)
     new_audio_data = new_audio_data.astype(np.int16).tobytes()
     f.close()
@@ -188,18 +144,74 @@ def _is_silent(file_path):
     dBFS = 10*np.log10(rms/max_possible)
     return dBFS <= -20
 
+def make_white_noise(file_len, fs=44100, samp_width=2, rms=-15):
+    #rms is in dBFS
+    if samp_width == 2:
+        tp = np.int16
+        std = (10**(rms/10)) * (2**16)/2
+    else:
+        tp = np.int8
+        std = (10**(rms/10)) * (2**8)/2
+
+    num_samples = int(fs * file_len)
+    return np.random.normal(loc=0, scale=std, size=(num_samples,)).astype(tp).tobytes()
+
+def make_offset_clip(file_root, start, stop):
+    f = wave.open(file_root, "rb")
+    fs = f.getframerate()
+    nf = f.getnframes()
+    ch = f.getnchannels()
+    sw = f.getsampwidth()
+    audio_data = np.frombuffer(f.readframes(nf), dtype=np.int16).astype(np.float32)
+    f.close()
+    audio_data = audio_data[start:stop]
+    f = wave.open(os.path.splitext(file_root)[0]+"_sp.wav", "wb")
+    f.setparams((ch, sw, fs, len(audio_data), "NONE", "not compressed"))
+    f.writeframes(audio_data.astype(np.int16).tobytes())
+    f.close()
+
+
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
 resample_and_resize(kaggle_dump, 1)
+
+shutil.move(kaggle_dump+"\\other", kaggle_dump+"\\..\\noise_data")
+shutil.move(kaggle_dump+"\\background_noise", kaggle_dump+"\\..\\noise_data")
+
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
     resample_and_resize(dump_dir, 1)
 
+#Make some more samples of my voice by offsetting the audio
+make_offset_clip(nick_root+"\\nick.wav", 2123431, 8102324)
+make_offset_clip(nick_root+"\\nick2.wav", 1123431, 4102324)
+make_offset_clip(nick_root+"\\nick3.wav", 823431, 7102324)
+
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
 resample_and_resize(nick_dump, 1)
-shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
-resample_and_resize(zhe_dump, 1)
+
+#Corrupted, skip
+# shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
+# resample_and_resize(zhe_dump, 1)
+
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
 resample_and_resize(nick_test_dump, 1)
 
 #Go through everything again and detect if it's a clip of silence.
 move_silent_clips(silence_test_root, silence_dump)
+
+#Make a bunch of white noise clips
+os.makedirs(white_noise_dump, exist_ok=True)
+for i in range(200):
+    wn = make_white_noise(1)
+    f = wave.open(white_noise_dump+"\\white_noise_"+str(i)+".wav", "wb")
+    f.setparams((1, 2, 44100, 44100, "NONE", "not compressed"))
+    f.writeframes(wn)
+    f.close()
+
+#Make silence clips
+s = np.zeros((44100,)).astype(np.int16).tobytes()
+for i in range(75):
+    f = wave.open(silence_dump+"\\silent_"+str(i)+".wav", "wb")
+    f.setparams((1, 2, 44100, 44100, "NONE", "not compressed"))
+    f.writeframes(s)
+    f.close()
