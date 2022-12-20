@@ -74,6 +74,12 @@ def thresh_monitor(stop):
     while True:
         if stop():
             break
+
+        if silent_time_thresh - strt > 0 and dBFS >= -9:
+            PRED_THRESH = -float("inf")
+        else:
+            PRED_THRESH = 4000
+
         if dBFS >= -9:
             strt = float("inf")
             triggered = False
@@ -81,10 +87,7 @@ def thresh_monitor(stop):
             triggered = True
             strt = time.time()
 
-        if silent_time_thresh - strt > 0:
-            PRED_THRESH = 1000
-        else:
-            PRED_THRESH = 4000
+
 
 def status_print(stop):
     #Don't need globals because we are just reading them
