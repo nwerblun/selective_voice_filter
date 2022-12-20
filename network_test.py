@@ -41,4 +41,4 @@ for filename in all_files:
     fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
     fft = fft.reshape((1,-1))
     pred = model.predict(fft, batch_size=1)
-    print("Prediction for {}: {}, softmax out: {}".format(filename, pred, tf.keras.activations.sigmoid(pred)))
+    print("Prediction for {}: {}, sigmoid out: {}".format(filename, pred, tf.keras.activations.sigmoid(pred)))

@@ -1,8 +1,10 @@
 Model Arch:
 0: unchanged, but retrained with new data for gen 1.
 1: Pretty sure it's the same as 0.
+2: Non-sequential with multiple convolutions added together.
 
 Model Weights:
-0: Corrupted audio data
-1: Re-trained with bad audio removed
-2: Re-trained with extra silence clips to try and identify silence
+0: Arch 0, Corrupted audio data
+1: Arch 1, Re-trained with bad audio removed
+2: Arch 1, Re-trained with extra silence clips to try and identify silence
+3: Arch 2, Created new white noise, silence and additional voice clips of myself for the new arch. Much better at saying no to silence. Still want more voice data of myself and to add more dense layers.
