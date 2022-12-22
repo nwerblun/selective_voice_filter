@@ -16,16 +16,27 @@ https://www.kaggle.com/kongaevans/speaker-recognition-dataset/download
 """
 kaggle_root = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches"
 kaggle_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
-vox_roots = ["C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206\\wav", \
+vox_roots = [
+            "C:\\Users\\NWerblun\\Downloads\\mojomove411-20071206\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070524\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\chocoholic-20070523\\wav", \
             "C:\\Users\\NWerblun\\Downloads\\calamity-20071011-poe\\wav", \
-            "C:\\Users\\NWerblun\\Downloads\\delibab-20071029\\wav"]
-vox_dumps = ["C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\mojomove411-20071206_dump", \
+            "C:\\Users\\NWerblun\\Downloads\\ttm-20071024\\wav", \
+            "C:\\Users\\NWerblun\\Downloads\\granthulbert-ar-01032007\\wav", \
+            "C:\\Users\\NWerblun\\Downloads\\ductapeguy-20080423-nau\\wav", \
+            "C:\\Users\\NWerblun\\Downloads\\starlite-20070613-fur1\\wav"
+]
+vox_dumps = [
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\mojomove411-20071206_dump", \
             "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\chocoholic-20070524_dump", \
             "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\chocoholic-20070523_dump", \
             "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\calamity-20071011-poe_dump", \
-            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\delibab-20071029_dump"]
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\delibab-20071029_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\ttm-20071024_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\granthulbert-ar-01032007_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\ductapeguy-20080423-nau_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\starlite-20070613-fur1_dump"
+]
 nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
 nick_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\nick_dump"
 zhe_root = "C:\\Users\\NWerblun\\Downloads\\zhe"
@@ -185,6 +196,7 @@ for dir, dump_dir in zip(vox_roots, vox_dumps):
 make_offset_clip(nick_root+"\\nick.wav", 2123431, 8102324)
 make_offset_clip(nick_root+"\\nick2.wav", 1123431, 4102324)
 make_offset_clip(nick_root+"\\nick3.wav", 823431, 7102324)
+make_offset_clip(nick_root+"\\nick4.wav", 91200, 510324)
 
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
 resample_and_resize(nick_dump, 1)
@@ -208,7 +220,7 @@ for i in range(200):
     f.writeframes(wn)
     f.close()
 
-#Make silence clips
+#Make pure silence clips
 s = np.zeros((44100,)).astype(np.int16).tobytes()
 for i in range(75):
     f = wave.open(silence_dump+"\\silent_"+str(i)+".wav", "wb")

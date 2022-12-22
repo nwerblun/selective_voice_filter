@@ -36,7 +36,14 @@ for filename in all_files:
     data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
     f.close()
     data = data.astype(np.float32)
-    fft = np.fft.fft(data)
+    rms_audio = np.sqrt(np.mean(data**2))
+    if rms_audio != 0:
+        dBFS = 10*np.log10(rms_audio/(2**15))
+        scaled_speak = data * (10**((-10 - dBFS)/10))
+    else:
+        scaled_speak = data
+
+    fft = np.fft.fft(scaled_speak)
     #keep only pos half of mag. spec.
     fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
     fft = fft.reshape((1,-1))

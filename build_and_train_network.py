@@ -32,7 +32,7 @@ ACCEPTED_SPEAKER_FOLDER_NAMES = ["nick_dump"]
 VALIDATION_SPLIT = 0.2 #% of total to save for val.
 SHUFFLE_SEED = 152
 NOISE_SCALE_MAX = 0.25
-BATCH_SIZE = 64
+BATCH_SIZE = 128
 EPOCHS = 100
 FILE_LEN = 1 #seconds
 FS = 44100 #Hz
@@ -75,6 +75,29 @@ def _test_correct_labels(file_paths, labels, name="set"):
 
     print("Found {} errors and {} correct in {}.".format(errors, correct, name))
     return errors == 0 and correct == len(file_paths)
+
+#Maybe don't use this one. Probably smarter to measure at the same audio levels
+def scale_audio_volume(data, scale_min=0.25, scale_max=1.0, prob_of_scaling=0.25):
+    #Pick a number from 1 - 100. Np rand is [low, high)
+    np_data = data.numpy().astype(np.float32)
+    do_i_scale = np.random.randint(1, 101)
+    if do_i_scale <= prob_of_scaling*100:
+        scale_amount = (scale_max - scale_min) * np.random.random() + scale_min
+        np_data *= scale_amount
+    return tf.convert_to_tensor(np_data, dtype=tf.float32)
+
+def normalize_audio_volume(data, rms_in_dB=-10):
+    np_data = data.numpy()
+    rms = np.sqrt(np.mean(np_data**2))
+    #Catch pure silence examples
+    if rms == 0:
+        return tf.convert_to_tensor(data, dtype=tf.float32)
+    #assume 16 bit samples, add functionality some other time maybe
+    #hardcode the max possible sample size (2^16)/2 to save some time.
+    dBFS = 10*np.log10(rms/32768.0)
+    gain = 10**((rms_in_dB - dBFS)/10)
+    np_data *= gain
+    return tf.convert_to_tensor(np_data, dtype=tf.float32)
 
 def get_audio_from_path(file_path):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
@@ -131,8 +154,8 @@ for s in subdirs:
 #Randomly set aside a few noise paths for testing and not just corrupting clips
 rng = np.random.RandomState(SHUFFLE_SEED*12)
 rng.shuffle(noise_paths)
-noise_for_test = noise_paths[:150]
-noise_paths = noise_paths[150:]
+noise_for_test = noise_paths[:100]
+noise_paths = noise_paths[100:]
 """
 Makes an assumption that the voice directory is structured as:
 VOICE_ROOT/
@@ -216,8 +239,20 @@ train_ds = train_ds.map(
     num_parallel_calls=tf.data.AUTOTUNE,
 )
 
+#Normalize all audio clips after adding noise
+train_ds = train_ds.map(
+    lambda x, y: (tf.py_function(normalize_audio_volume, [x, -10.0], tf.float32), y),
+    num_parallel_calls=tf.data.AUTOTUNE,
+)
+
 train_ds = train_ds.map(
     lambda x, y: (tf.py_function(get_fft, [x], tf.float32), y),
+    num_parallel_calls=tf.data.AUTOTUNE
+)
+
+#Normalize all audio clips
+valid_ds = valid_ds.map(
+    lambda x, y: (tf.py_function(normalize_audio_volume, [x,-10.0], tf.float32), y),
     num_parallel_calls=tf.data.AUTOTUNE
 )
 
@@ -235,8 +270,8 @@ the last will give you an error when going into the network. Repeating after
 just copies the [10] instead of extending it. So repeat first, then batch to get
 [1,2,3], [4,5,6], [7,8,9], [10,1,2]...etc
 """
-train_ds = train_ds.shuffle(buffer_size=BATCH_SIZE * 16, seed=SHUFFLE_SEED).repeat().batch(BATCH_SIZE)
-valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 16, seed=SHUFFLE_SEED).repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
+train_ds = train_ds.shuffle(buffer_size=BATCH_SIZE * 8, seed=SHUFFLE_SEED).repeat().batch(BATCH_SIZE)
+valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 8, seed=SHUFFLE_SEED).repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
 
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
@@ -297,7 +332,7 @@ model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True), optimiz
 #model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
 model_save_filename = "model.h5"
-early_cb = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+early_cb = keras.callbacks.EarlyStopping(patience=12, restore_best_weights=True)
 mid_cb = keras.callbacks.ModelCheckpoint(
     model_save_filename, monitor="val_accuracy", save_best_only=True
 )
