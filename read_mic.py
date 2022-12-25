@@ -37,7 +37,7 @@ GO = True
 dBFS = 0
 PREDICTION = -float("inf")
 QUEUE = np.zeros((fs,)) #the comma is not a mistake
-PRED_THRESH = 1000
+PRED_THRESH = 0.97
 queue_lock = threading.Lock()
 
 def callback(in_data, frame_count, time_info, status_flags):
@@ -61,11 +61,17 @@ def make_prediction(stop):
             break
         with queue_lock:
             temp_queue = QUEUE[:]
+        rms_audio = np.sqrt(np.mean(temp_queue**2))
+        if rms_audio != 0:
+            db = 10*np.log10(rms_audio/(2**15))
+            scaled_speak = temp_queue * (10**((-10 - db)/10))
+        else:
+            scaled_speak = temp_queue
         fft = np.fft.fft(temp_queue)
         #keep only pos half of mag. spec.
         fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
         fft = fft.reshape((1,-1))
-        PREDICTION = float(model.predict(fft, batch_size=1, verbose=0))
+        PREDICTION = float(tf.keras.activations.sigmoid(model.predict(fft, batch_size=1, verbose=0)))
 
 def thresh_monitor(stop):
     strt = time.time()
@@ -97,18 +103,19 @@ def status_print(stop):
         cls()
         print("Press CTRL+C To End", \
                 "\ndBFS Reading: {:2.2f}".format(dBFS), \
-                "\nCurrent Prediction (1 sec. delayed): {:2.2f}\nSigmoid Prediction (1 sec. delayed): {:2.2f}".format(PREDICTION, tf.keras.activations.sigmoid(PREDICTION))
+                "\nCurrent Prediction (1 sec. delayed): {:2.2f}".format(PREDICTION)
         )
         if PREDICTION >= PRED_THRESH:
             print("Mic Status: Active")
         else:
             print("Mic Status: Muted")
-        time.sleep(0.045)
+        time.sleep(0.05)
 
 
 """
+Changes when restarting computer
 Write to VB cable input, and it gets carried to VB cable output. Use VB cable output as the discord input
-{'index': 10, 'structVersion': 2, 'name': 'CABLE Input (VB-Audio Virtual C', 'hostApi': 0, 'maxInputChannels': 0, 'maxOutputChannels': 8,
+{'index': 11, 'structVersion': 2, 'name': 'CABLE Input (VB-Audio Virtual C', 'hostApi': 0, 'maxInputChannels': 0, 'maxOutputChannels': 8,
 'defaultLowInputLatency': 0.09, 'defaultLowOutputLatency': 0.09, 'defaultHighInputLatency': 0.18,
 'defaultHighOutputLatency': 0.18, 'defaultSampleRate': 44100.0}
 """
@@ -118,14 +125,14 @@ stream_write = pa.open(format=sample_format,
                     frames_per_buffer=feedthrough_chunk_size,
                     input=True,
                     output=True,
-                    output_device_index=10,
+                    output_device_index=11,
                     stream_callback=callback)
 
 try:
     stop_threads = False
     mon = threading.Thread(target=status_print, args=(lambda : stop_threads,), daemon=True)
     predictor = threading.Thread(target=make_prediction, args=(lambda : stop_threads,), daemon=True)
-    mon.start()
+    #mon.start()
     predictor.start()
     while True:
         time.sleep(0.2)

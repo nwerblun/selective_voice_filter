@@ -311,15 +311,15 @@ inp = keras.layers.Input(shape=input_shape, name="Input")
 lrs = _make_layer_helper(inp, 16)
 lrs = _make_layer_helper(lrs, 32)
 lrs = _make_layer_helper(lrs, 64)
-lrs = _make_layer_helper(lrs, 128)
+lrs = _make_layer_helper(lrs, 128) #try removing
 lrs = keras.layers.AveragePooling1D(pool_size=4, strides=4)(lrs)
 lrs = keras.layers.Dropout(0.15)(lrs)
 lrs = keras.layers.Flatten()(lrs)
 lrs = keras.layers.Dense(256, activation="relu")(lrs)
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
-lrs = keras.layers.Dense(64, activation="relu")(lrs)
-lrs = keras.layers.Dense(32, activation="relu")(lrs)
-lrs = keras.layers.Dense(16, activation="relu")(lrs)
+lrs = keras.layers.Dense(64, activation="relu")(lrs) #try removing
+lrs = keras.layers.Dense(32, activation="relu")(lrs) #try removing
+lrs = keras.layers.Dense(16, activation="relu")(lrs) #try removing
 lrs = keras.layers.Dense(8, activation="relu")(lrs)
 outs = keras.layers.Dense(1, activation=None, name="Output")(lrs)
 model = keras.models.Model(inputs=inp, outputs=outs)
