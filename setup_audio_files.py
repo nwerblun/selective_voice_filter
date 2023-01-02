@@ -44,8 +44,10 @@ zhe_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_da
 nick_test_root = "C:\\Users\\NWerblun\\Downloads\\nick_test"
 nick_test_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\test_data\\nick_test_dump"
 silence_test_root = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
-silence_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\silence_data"
+silence_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\noise_data\\silence"
 white_noise_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\noise_data\\white_noise"
+
+FILE_LEN = 1
 
 def resample_and_resize(root, new_len=1):
     _, subdirs, filenames = next(os.walk(root))
@@ -181,16 +183,17 @@ def make_offset_clip(file_root, start, stop):
     f.writeframes(audio_data.astype(np.int16).tobytes())
     f.close()
 
-
+print("Moving and resampling audio clips...")
 shutil.copytree(kaggle_root, kaggle_dump, dirs_exist_ok=True)
-resample_and_resize(kaggle_dump, 1)
+resample_and_resize(kaggle_dump, FILE_LEN)
 
+os.makedirs(kaggle_dump+"\\..\\noise_data", exist_ok=True)
 shutil.move(kaggle_dump+"\\other", kaggle_dump+"\\..\\noise_data")
 shutil.move(kaggle_dump+"\\background_noise", kaggle_dump+"\\..\\noise_data")
 
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
-    resample_and_resize(dump_dir, 1)
+    resample_and_resize(dump_dir, FILE_LEN)
 
 #Make some more samples of my voice by offsetting the audio
 make_offset_clip(nick_root+"\\nick.wav", 2123431, 8102324)
@@ -199,30 +202,33 @@ make_offset_clip(nick_root+"\\nick3.wav", 823431, 7102324)
 make_offset_clip(nick_root+"\\nick4.wav", 91200, 510324)
 
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
-resample_and_resize(nick_dump, 1)
+resample_and_resize(nick_dump, FILE_LEN)
 
 #Corrupted, skip
 # shutil.copytree(zhe_root, zhe_dump, dirs_exist_ok=True)
-# resample_and_resize(zhe_dump, 1)
+# resample_and_resize(zhe_dump, FILE_LEN)
 
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
-resample_and_resize(nick_test_dump, 1)
+resample_and_resize(nick_test_dump, FILE_LEN)
 
-#Go through everything again and detect if it's a clip of silence.
+# Go through everything again and detect if it's a clip of silence.
+print("Moving silent clips to noise directory...")
+os.makedirs(silence_dump, exist_ok=True)
 move_silent_clips(silence_test_root, silence_dump)
 
-#Make a bunch of white noise clips
+print("Generating white noise...")
+# Make a bunch of white noise clips
 os.makedirs(white_noise_dump, exist_ok=True)
-for i in range(200):
-    wn = make_white_noise(1)
+for i in range(50):
+    wn = make_white_noise(FILE_LEN, rms=-10)
     f = wave.open(white_noise_dump+"\\white_noise_"+str(i)+".wav", "wb")
     f.setparams((1, 2, 44100, 44100, "NONE", "not compressed"))
     f.writeframes(wn)
     f.close()
 
-#Make pure silence clips
+#Make pure silence clips, canceled for now because I don't think it helps.
 s = np.zeros((44100,)).astype(np.int16).tobytes()
-for i in range(75):
+for i in range(0):
     f = wave.open(silence_dump+"\\silent_"+str(i)+".wav", "wb")
     f.setparams((1, 2, 44100, 44100, "NONE", "not compressed"))
     f.writeframes(s)

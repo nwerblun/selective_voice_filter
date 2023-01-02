@@ -27,7 +27,6 @@ Input shape = ()
 ROOT_DATASET_PATH = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data"
 VOICE_DATASET_PATH = ROOT_DATASET_PATH+"\\voice_data"
 NOISE_DATASET_PATH = ROOT_DATASET_PATH+"\\noise_data"
-SILENCE_DATASET_PATH = ROOT_DATASET_PATH+"\\silence_data"
 ACCEPTED_SPEAKER_FOLDER_NAMES = ["nick_dump"]
 VALIDATION_SPLIT = 0.2 #% of total to save for val.
 SHUFFLE_SEED = 152
@@ -56,6 +55,7 @@ def _dump_to_file(ds):
             f.writeframes(tup[0].astype(np.int16).tobytes())
             f.close()
             not_me_flag = 1
+
 #Helper to verify that the labels match the directory name
 def _test_correct_labels(file_paths, labels, name="set"):
     errors = 0
@@ -116,13 +116,21 @@ def to_ds(paths, labels):
 def add_noise(audio_data, noise_paths, scale_max=0.5):
     #choose a random noise
     ind = np.random.randint(0, len(noise_paths))
-    scale = np.random.uniform(0, scale_max)
+
+    #Trying scaling all noise by the same amount. Let's see how that goes.
+    #scale = np.random.uniform(0.01, scale_max)
+
     #Since using Datasets, input will come in as a tensor object. Convert to np.
     #np str comes in as a bytes object, need to decode.
     f = wave.open(noise_paths[ind].numpy().decode('utf-8'), "rb")
     noise_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
-    prop =  np.max(audio_data.numpy()) / np.max(noise_data) # how much louder is audio
-    noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
+    #Catch pure 0 noise
+    if not all(noise_data):
+        prop = 0
+    else:
+        prop =  np.max(np.abs(audio_data.numpy())) / np.max(np.abs(noise_data)) # how much louder is audio
+    #noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
+    noisy_audio = audio_data.numpy() + (scale_max * prop * noise_data)
     return tf.convert_to_tensor(noisy_audio, dtype=tf.float32)
 
 def get_fft(audio):
@@ -165,22 +173,10 @@ VOICE_ROOT/
 ..speaker2/
 ....file1.wav
 etc.
-
-Silence directory should be
-SILENCE_ROOT/
-..silence1.wav
-..silence2.wav
-etc.
 """
 print("Scanning audio files. Separating into categories and scanning for silence...")
 audio_paths = []
 accepted_speaker_audio_paths = []
-_, _, filenames = next(os.walk(SILENCE_DATASET_PATH))
-for f in filenames:
-    if os.path.splitext(f)[1] == ".wav":
-        audio_paths += [os.path.join(SILENCE_DATASET_PATH, f)]
-
-print("Detected {} silence clips. Moving on to speaking clips.".format(len(audio_paths)))
 _, subdirs, _ = next(os.walk(VOICE_DATASET_PATH))
 for s in subdirs:
     _, _, filenames = next(os.walk(os.path.join(VOICE_DATASET_PATH, s)))
@@ -297,10 +293,10 @@ model = keras.Sequential(
 )
 """
 def _make_layer_helper(inp, conv_filt):
-    s1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
+    s1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(inp)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(inp)
     l1 = keras.layers.Activation("relu")(l1)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(l1)
     l1 = keras.layers.Activation("relu")(l1)
     l1 = keras.layers.Add()([l1, s1])
     l1 = keras.layers.Activation("relu")(l1)
@@ -311,15 +307,16 @@ inp = keras.layers.Input(shape=input_shape, name="Input")
 lrs = _make_layer_helper(inp, 16)
 lrs = _make_layer_helper(lrs, 32)
 lrs = _make_layer_helper(lrs, 64)
-lrs = _make_layer_helper(lrs, 128) #try removing
+#lrs = _make_layer_helper(lrs, 128) #try removing
+lrs = keras.layers.Conv1D(128, kernel_size=4, activation="relu", padding="same")(lrs)
 lrs = keras.layers.AveragePooling1D(pool_size=4, strides=4)(lrs)
-lrs = keras.layers.Dropout(0.15)(lrs)
+lrs = keras.layers.Dropout(0.25)(lrs)
 lrs = keras.layers.Flatten()(lrs)
 lrs = keras.layers.Dense(256, activation="relu")(lrs)
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
 lrs = keras.layers.Dense(64, activation="relu")(lrs) #try removing
 lrs = keras.layers.Dense(32, activation="relu")(lrs) #try removing
-lrs = keras.layers.Dense(16, activation="relu")(lrs) #try removing
+#lrs = keras.layers.Dense(16, activation="relu")(lrs) #try removing
 lrs = keras.layers.Dense(8, activation="relu")(lrs)
 outs = keras.layers.Dense(1, activation=None, name="Output")(lrs)
 model = keras.models.Model(inputs=inp, outputs=outs)
