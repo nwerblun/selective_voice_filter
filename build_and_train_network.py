@@ -3,6 +3,7 @@ import os
 import tensorflow as tf
 from tensorflow import keras
 import wave
+from scipy import signal
 """
 prepare data into
 X =
@@ -29,10 +30,10 @@ VOICE_DATASET_PATH = ROOT_DATASET_PATH+"\\voice_data"
 NOISE_DATASET_PATH = ROOT_DATASET_PATH+"\\noise_data"
 ACCEPTED_SPEAKER_FOLDER_NAMES = ["nick_dump"]
 VALIDATION_SPLIT = 0.2 #% of total to save for val.
-SHUFFLE_SEED = 152
+SHUFFLE_SEED = 6233
 NOISE_SCALE_MAX = 0.25
-BATCH_SIZE = 128
-EPOCHS = 100
+BATCH_SIZE = 200
+EPOCHS = 50
 FILE_LEN = 1 #seconds
 FS = 44100 #Hz
 
@@ -124,11 +125,7 @@ def add_noise(audio_data, noise_paths, scale_max=0.5):
     #np str comes in as a bytes object, need to decode.
     f = wave.open(noise_paths[ind].numpy().decode('utf-8'), "rb")
     noise_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
-    #Catch pure 0 noise
-    if not all(noise_data):
-        prop = 0
-    else:
-        prop =  np.max(np.abs(audio_data.numpy())) / np.max(np.abs(noise_data)) # how much louder is audio
+    prop =  np.max(np.abs(audio_data.numpy())) / np.max(np.abs(noise_data))
     #noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
     noisy_audio = audio_data.numpy() + (scale_max * prop * noise_data)
     return tf.convert_to_tensor(noisy_audio, dtype=tf.float32)
@@ -139,6 +136,14 @@ def get_fft(audio):
     fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
     #Reshaping to make tf happy
     return tf.convert_to_tensor(fft.reshape((fft.shape[0],1)))
+
+def get_spectrogram(audio):
+    _, _, Sxx = signal.spectrogram(audio.numpy(), fs=FS, nperseg=512, mode="magnitude")
+    #Add tiny value to avoid 0
+    scaled = 10*np.log10(Sxx+1e-9)
+    #explicitly show channels
+    new_shape = (scaled.shape[0], scaled.shape[1], 1)
+    return tf.convert_to_tensor(scaled.reshape(new_shape))
 
 """
 Makes an assumption that the noise directory is structured as:
@@ -242,7 +247,7 @@ train_ds = train_ds.map(
 )
 
 train_ds = train_ds.map(
-    lambda x, y: (tf.py_function(get_fft, [x], tf.float32), y),
+    lambda x, y: (tf.py_function(get_spectrogram, [x], tf.float32), y),
     num_parallel_calls=tf.data.AUTOTUNE
 )
 
@@ -253,7 +258,7 @@ valid_ds = valid_ds.map(
 )
 
 valid_ds = valid_ds.map(
-    lambda x, y: (tf.py_function(get_fft, [x], tf.float32), y),
+    lambda x, y: (tf.py_function(get_spectrogram, [x], tf.float32), y),
     num_parallel_calls=tf.data.AUTOTUNE
 )
 
@@ -266,12 +271,12 @@ the last will give you an error when going into the network. Repeating after
 just copies the [10] instead of extending it. So repeat first, then batch to get
 [1,2,3], [4,5,6], [7,8,9], [10,1,2]...etc
 """
-train_ds = train_ds.shuffle(buffer_size=BATCH_SIZE * 8, seed=SHUFFLE_SEED).repeat().batch(BATCH_SIZE)
-valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 8, seed=SHUFFLE_SEED).repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
+train_ds = train_ds.shuffle(buffer_size=BATCH_SIZE * 6, seed=SHUFFLE_SEED).repeat().batch(BATCH_SIZE)
+valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 6, seed=SHUFFLE_SEED).repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
 
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
-input_shape = (int(FS*FILE_LEN/2),1)
+input_shape = (512//2+1, int(FS/(512-512//8)),1)#(int(FS*FILE_LEN/2),1)
 
 """
 model = keras.Sequential(
@@ -293,31 +298,39 @@ model = keras.Sequential(
 )
 """
 def _make_layer_helper(inp, conv_filt):
-    s1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(inp)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(inp)
+    s1 = keras.layers.Conv1D(conv_filt, kernel_size=1, padding="same")(inp)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
     l1 = keras.layers.Activation("relu")(l1)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=4, padding="same")(l1)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
     l1 = keras.layers.Activation("relu")(l1)
+    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
     l1 = keras.layers.Add()([l1, s1])
     l1 = keras.layers.Activation("relu")(l1)
     return keras.layers.MaxPool1D(pool_size=2, strides=2)(l1)
 
-#Attempt 2, non-sequential.
+#Attempt 3, non-sequential but way smaller.
 inp = keras.layers.Input(shape=input_shape, name="Input")
-lrs = _make_layer_helper(inp, 16)
-lrs = _make_layer_helper(lrs, 32)
-lrs = _make_layer_helper(lrs, 64)
-#lrs = _make_layer_helper(lrs, 128) #try removing
-lrs = keras.layers.Conv1D(128, kernel_size=4, activation="relu", padding="same")(lrs)
-lrs = keras.layers.AveragePooling1D(pool_size=4, strides=4)(lrs)
-lrs = keras.layers.Dropout(0.25)(lrs)
+
+lrs = keras.layers.Conv2D(16, kernel_size=(3,3), strides=3, activation="relu", padding="same")(inp)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
+lrs = keras.layers.Conv2D(32, kernel_size=(5,5), strides=5, activation="relu", padding="same")(lrs)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
+lrs = keras.layers.Conv2D(64, kernel_size=(5,5), strides=5, activation="relu", padding="same")(lrs)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
+lrs = keras.layers.Dropout(0.2)(lrs)
 lrs = keras.layers.Flatten()(lrs)
-lrs = keras.layers.Dense(256, activation="relu")(lrs)
+
+# lrs = keras.layers.GRU(128, return_sequences=True)(lrs)
+# lrs = keras.layers.GRU(256, return_sequences=True)(lrs)
+
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
-lrs = keras.layers.Dense(64, activation="relu")(lrs) #try removing
-lrs = keras.layers.Dense(32, activation="relu")(lrs) #try removing
-#lrs = keras.layers.Dense(16, activation="relu")(lrs) #try removing
-lrs = keras.layers.Dense(8, activation="relu")(lrs)
+lrs = keras.layers.Dense(128, activation="relu")(lrs)
+lrs = keras.layers.Dense(32, activation="relu")(lrs)
+lrs = keras.layers.Dense(32, activation="relu")(lrs)
+lrs = keras.layers.Dense(16, activation="relu")(lrs)
 outs = keras.layers.Dense(1, activation=None, name="Output")(lrs)
 model = keras.models.Model(inputs=inp, outputs=outs)
 #Final activation is none since I'm using logits and they need to range \

@@ -3,10 +3,24 @@ import os
 import tensorflow as tf
 from tensorflow import keras
 import wave
+from scipy import signal
+
+os.system("color") #needed to show colored text
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 from_h5 = True
 from_json = not from_h5
 
+print("Loading model...")
 if from_h5:
     model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
 if from_json:
@@ -17,21 +31,24 @@ if from_json:
     model.load_weights("model_weights.h5")
 
 model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
-roots = [
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\delibab-20071029_dump", \
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\calamity-20071011-poe_dump", \
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\Jens_Stoltenberg", \
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\noise", \
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\silence", \
-        r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data\nick_test_dump"
-]
+root = r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data"
 all_files = []
-for dir in roots:
-    _,_,filenames = next(os.walk(dir))
-    for f in filenames:
-        all_files.append(os.path.join(dir, f))
 
-for filename in all_files:
+os.system("cls")
+print("Beginning testing...")
+_,s,_ = next(os.walk(root))
+for sub in s:
+    _,_,filenames = next(os.walk(os.path.join(root,sub)))
+    for f in filenames:
+        if sub == "nick_test_dump":
+            all_files.append((os.path.join(root,sub,f), 1))
+        else:
+            all_files.append((os.path.join(root,sub,f), 0))
+
+fails = 0
+successes = 0
+failed_files = []
+for filename, label in all_files:
     f = wave.open(filename, "rb")
     data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
     f.close()
@@ -43,9 +60,48 @@ for filename in all_files:
     else:
         scaled_speak = data
 
+    """
     fft = np.fft.fft(scaled_speak)
     #keep only pos half of mag. spec.
     fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
     fft = fft.reshape((1,-1))
-    pred = model.predict(fft, batch_size=1)
-    print("Prediction for {}: {}, sigmoid out: {}".format(filename, pred, tf.keras.activations.sigmoid(pred)))
+    """
+
+    _, _, Sxx = signal.spectrogram(scaled_speak, fs=44100, nperseg=512, mode="magnitude")
+    #Add tiny value to avoid 0
+    scaled = 10*np.log10(Sxx+1e-9)
+    #explicitly state 1 batch because predict is stupid
+    new_shape = (1, scaled.shape[0], scaled.shape[1])
+    pred = model.predict(scaled.reshape(new_shape), batch_size=1)
+
+    strg = "Prediction for {}: {}, sigmoid out: {}".format(filename, pred, tf.keras.activations.sigmoid(pred))
+    spaces = " "*(175 - len(strg))
+    strg += spaces
+    if label and pred > 0:
+        successes += 1
+        strg += "\t" + bcolors.OKGREEN + "PASS" + bcolors.ENDC
+    elif label and pred <= 0:
+        fails += 1
+        failed_files += [(filename, pred, label)]
+        strg += "\t" + bcolors.FAIL + "FAIL" + bcolors.ENDC
+    elif not label and pred > 0:
+        fails += 1
+        failed_files += [(filename, pred, label)]
+        strg += "\t" + bcolors.FAIL + "FAIL" + bcolors.ENDC
+    else:
+        successes += 1
+        strg += "\t" + bcolors.OKGREEN + "PASS" + bcolors.ENDC
+    print(strg)
+
+print("Failed files:")
+for fname, pred, label in failed_files:
+    strg = ""
+    strg += fname
+    strg += " "*(130 - len(strg))
+    strg += "prediction: " + str(pred)
+    strg += " "*(140 - len(strg))
+    strg += "\tsigmoid prediction: {}".format(tf.keras.activations.sigmoid(pred))
+    strg += " "*(170 - len(strg))
+    strg += "correct: " + str(label)
+    print(strg)
+print("Total fails: {}\nTotal successes: {}\nPercentage: {}".format(fails, successes, successes/len(all_files)))

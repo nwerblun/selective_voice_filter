@@ -37,7 +37,7 @@ def callback_read(in_data, frame_count, time_info, status_flags):
     global QUEUE
     in_data_np = np.frombuffer(in_data, dtype=np.int16).astype(np.float32)
     with queue_lock:
-        QUEUE = np.append(QUEUE[feedthrough_chunk_size:], in_data_np)
+        QUEUE = np.append(QUEUE[feedthrough_chunk_size_read:], in_data_np)
     return (None, pyaudio.paContinue)
 
 def callback_write(in_data, frame_count, time_info, status_flags):
