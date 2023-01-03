@@ -278,36 +278,6 @@ train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
 input_shape = (512//2+1, int(FS/(512-512//8)),1)#(int(FS*FILE_LEN/2),1)
 
-"""
-model = keras.Sequential(
-    [
-        keras.Input(shape=input_shape, name="Input"),
-        keras.layers.Conv1D(16, kernel_size=4, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Dropout(0.15),
-        keras.layers.Conv1D(32, kernel_size=4, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Dropout(0.1),
-        keras.layers.Conv1D(64, kernel_size=3, activation="relu", padding="same"),
-        keras.layers.MaxPool1D(pool_size=2, strides=2),
-        keras.layers.Flatten(),
-        keras.layers.Dense(64, activation="relu"),
-        keras.layers.Dense(16, activation="relu"),
-        keras.layers.Dense(1, activation=None, name="output")
-    ]
-)
-"""
-def _make_layer_helper(inp, conv_filt):
-    s1 = keras.layers.Conv1D(conv_filt, kernel_size=1, padding="same")(inp)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(inp)
-    l1 = keras.layers.Activation("relu")(l1)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
-    l1 = keras.layers.Activation("relu")(l1)
-    l1 = keras.layers.Conv1D(conv_filt, kernel_size=3, padding="same")(l1)
-    l1 = keras.layers.Add()([l1, s1])
-    l1 = keras.layers.Activation("relu")(l1)
-    return keras.layers.MaxPool1D(pool_size=2, strides=2)(l1)
-
 #Attempt 3, non-sequential but way smaller.
 inp = keras.layers.Input(shape=input_shape, name="Input")
 
@@ -322,9 +292,6 @@ lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
 lrs = keras.layers.Dropout(0.2)(lrs)
 lrs = keras.layers.Flatten()(lrs)
-
-# lrs = keras.layers.GRU(128, return_sequences=True)(lrs)
-# lrs = keras.layers.GRU(256, return_sequences=True)(lrs)
 
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
