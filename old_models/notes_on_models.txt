@@ -3,9 +3,11 @@ Model Arch:
 1: Pretty sure it's the same as 0.
 2: Non-sequential with multiple convolutions added together.
 3: Non-sequential. Added more dense layers. Accidentally trained on test data so I did it a couple times. Now trains on normalized audio volume. Loss <1 and accuracy >98%.
+4: Train on spectrogram instead of FFT. FFT is too susceptible to gaps of silence / resampling. 2D Conv on spectrogram seems to work better?
 Model Weights:
 0: Arch 0, Corrupted audio data
 1: Arch 1, Re-trained with bad audio removed
 2: Arch 1, Re-trained with extra silence clips to try and identify silence
 3: Arch 2, Created new white noise, silence and additional voice clips of myself for the new arch. Much better at saying no to silence. Still want more voice data of myself and to add more dense layers.
 4: Arch 3, First attempt. It works fairly well as far as I can tell. Might remove pure silence from the test data.
+4: Arch 4, First 2D attempt. Works too well? Will attempt some RNN structure where I don't shuffle the data.
