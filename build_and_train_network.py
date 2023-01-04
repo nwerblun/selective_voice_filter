@@ -128,7 +128,7 @@ def add_noise(audio_data, noise_paths, scale_max=0.5):
     prop =  np.max(np.abs(audio_data.numpy())) / np.max(np.abs(noise_data))
     #noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
     noisy_audio = audio_data.numpy() + (scale_max * prop * noise_data)
-    return tf.convert_to_tensor(noisy_audio, dtype=tf.float32)
+    return tf.convert_to_tensor(noisy_audio)
 
 def get_fft(audio):
     fft = np.fft.fft(audio.numpy())
@@ -293,7 +293,7 @@ lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 lrs = keras.layers.Dropout(0.2)(lrs)
 lrs = keras.layers.Flatten()(lrs)
 
-lrs = keras.layers.Dense(128, activation="relu")(lrs)
+lrs = keras.layers.Dense(256, activation="relu")(lrs)
 lrs = keras.layers.Dense(128, activation="relu")(lrs)
 lrs = keras.layers.Dense(32, activation="relu")(lrs)
 lrs = keras.layers.Dense(32, activation="relu")(lrs)

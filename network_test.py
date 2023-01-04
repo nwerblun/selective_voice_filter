@@ -18,17 +18,18 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 from_h5 = True
-from_json = not from_h5
+latest_arch = 4
+latest_weights = 5
 
 print("Loading model...")
 if from_h5:
     model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
-if from_json:
-    f = open("model_arch.json", "r")
+else:
+    f = open("old_models\\model_arch_"+str(latest_arch)+".json", "r")
     model_text = f.read()
     f.close()
     model = keras.models.model_from_json(model_text)
-    model.load_weights("model_weights.h5")
+    model.load_weights("old_models\\model_weights_"+str(latest_weights)+".h5")
 
 model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 root = r"C:\Users\NWerblun\Desktop\selective_voice_filter\test_data"
