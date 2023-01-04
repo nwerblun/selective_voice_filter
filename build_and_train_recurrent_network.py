@@ -36,46 +36,34 @@ BATCH_SIZE = 200
 EPOCHS = 50
 FILE_LEN = 1 #seconds
 FS = 44100 #Hz
-
-#Helper method just so I can listen to some data.
-def _dump_to_file(ds):
-    me_flag = 0
-    not_me_flag = 0
-    for tup in ds.as_numpy_iterator():
-        if me_flag and not_me_flag:
-            break
-        if tup[1] == 1 and not me_flag:
-            f = wave.open(".\\test_me.wav", "wb")
-            f.setparams((1, 2, FS, len(tup[0]), "NONE", "not compressed"))
-            f.writeframes(tup[0].astype(np.int16).tobytes())
-            f.close()
-            me_flag = 1
-        elif tup[1] == 0 and not not_me_flag:
-            f = wave.open(".\\test_not_me.wav", "wb")
-            f.setparams((1, 2, FS, len(tup[0]), "NONE", "not compressed"))
-            f.writeframes(tup[0].astype(np.int16).tobytes())
-            f.close()
-            not_me_flag = 1
+SEQUENCE_LENGTH = 5
 
 #Helper to verify that the labels match the directory name
 def _test_correct_labels(file_paths, labels, name="set"):
+    #File paths is an array of SEQUENCE_LENGTH file names
     errors = 0
     correct = 0
     wrong = []
+
     print("checking for label errors...")
-    for ind, tup in enumerate(zip(file_paths, labels)):
-        fpth, _ = os.path.split(tup[0])
-        if "nick_dump" in fpth and tup[1] != 1:
-            wrong += [tup]
-            errors += 1
-        elif not ("nick_dump" in fpth) and tup[0] == 1:
-            wrong += [tup]
-            errors += 1
-        else:
-            correct += 1
+    for sequence_names, label in zip(file_paths, labels):
+        for fname in sequence_names:
+            fpth, _ = os.path.split(fname)
+            if "nick_dump" in fpth and label != 1:
+                wrong += [(fname, label)]
+                errors += 1
+            elif not ("nick_dump" in fpth) and label == 1:
+                wrong += [(fname, label)]
+                errors += 1
+            else:
+                correct += 1
 
     print("Found {} errors and {} correct in {}.".format(errors, correct, name))
-    return errors == 0 and correct == len(file_paths)
+    if errors > 0:
+        print("Found errors in these files:")
+        for i in wrong:
+            print(i)
+    return errors == 0 and correct == file_paths.shape[0]*file_paths.shape[1]
 
 #Maybe don't use this one. Probably smarter to measure at the same audio levels
 def scale_audio_volume(data, scale_min=0.25, scale_max=1.0, prob_of_scaling=0.25):
@@ -88,25 +76,33 @@ def scale_audio_volume(data, scale_min=0.25, scale_max=1.0, prob_of_scaling=0.25
     return tf.convert_to_tensor(np_data, dtype=tf.float32)
 
 def normalize_audio_volume(data, rms_in_dB=-10):
-    np_data = data.numpy()
-    rms = np.sqrt(np.mean(np_data**2))
-    #Catch pure silence examples
-    if rms == 0:
-        return tf.convert_to_tensor(data, dtype=tf.float32)
-    #assume 16 bit samples, add functionality some other time maybe
-    #hardcode the max possible sample size (2^16)/2 to save some time.
-    dBFS = 10*np.log10(rms/32768.0)
-    gain = 10**((rms_in_dB - dBFS)/10)
-    np_data *= gain
-    return tf.convert_to_tensor(np_data, dtype=tf.float32)
+    normed = []
+    for d in data:
+        np_data = d.numpy()
+        rms = np.sqrt(np.mean(np_data**2))
+        #Catch pure silence examples
+        if rms == 0:
+            normed += [np_data]
+            continue
+        #assume 16 bit samples, add functionality some other time maybe
+        #hardcode the max possible sample size (2^16)/2 to save some time.
+        dBFS = 10*np.log10(rms/32768.0)
+        gain = 10**((rms_in_dB - dBFS)/10)
+        np_data *= gain
+        normed += [np_data]
+    return tf.convert_to_tensor(np.array(normed), dtype=tf.float32)
 
-def get_audio_from_path(file_path):
+def get_audio_from_path(file_paths):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
     #np converted str comes in as a bytes object, need to decode.
-    f = wave.open(file_path.numpy().decode('utf-8'), "rb")
-    data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
-    f.close()
-    return tf.convert_to_tensor(data.astype(np.float32), dtype=tf.float32)
+    sequence_paths = file_paths.numpy()
+    sequence_audios = []
+    for fname in sequence_paths:
+        f = wave.open(fname.decode('utf-8'), "rb")
+        data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
+        f.close()
+        sequence_audios += [data.astype(np.float32)]
+    return tf.convert_to_tensor(np.array(sequence_audios), dtype=tf.float32)
 
 def to_ds(paths, labels):
     paths_ds = tf.data.Dataset.from_tensor_slices(paths)
@@ -115,20 +111,22 @@ def to_ds(paths, labels):
     return tf.data.Dataset.zip((audio_ds, labels_ds))
 
 def add_noise(audio_data, noise_paths, scale_max=0.5):
-    #choose a random noise
-    ind = np.random.randint(0, len(noise_paths))
+    noisy_audio = []
+    for a in audio_data:
+        #choose a random noise
+        ind = np.random.randint(0, len(noise_paths))
 
-    #Trying scaling all noise by the same amount. Let's see how that goes.
-    #scale = np.random.uniform(0.01, scale_max)
+        #Trying scaling all noise by the same amount. Let's see how that goes.
+        #scale = np.random.uniform(0.01, scale_max)
 
-    #Since using Datasets, input will come in as a tensor object. Convert to np.
-    #np str comes in as a bytes object, need to decode.
-    f = wave.open(noise_paths[ind].numpy().decode('utf-8'), "rb")
-    noise_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
-    prop =  np.max(np.abs(audio_data.numpy())) / np.max(np.abs(noise_data))
-    #noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
-    noisy_audio = audio_data.numpy() + (scale_max * prop * noise_data)
-    return tf.convert_to_tensor(noisy_audio, dtype=tf.float32)
+        #Since using Datasets, input will come in as a tensor object. Convert to np.
+        #np str comes in as a bytes object, need to decode.
+        f = wave.open(noise_paths[ind].numpy().decode('utf-8'), "rb")
+        noise_data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32)
+        prop =  np.max(np.abs(a.numpy())) / np.max(np.abs(noise_data))
+        #noisy_audio = audio_data.numpy() + (scale * prop * noise_data)
+        noisy_audio += [a.numpy() + (scale_max * prop * noise_data)]
+    return tf.convert_to_tensor(np.array(noisy_audio))
 
 def get_fft(audio):
     fft = np.fft.fft(audio.numpy())
@@ -138,12 +136,15 @@ def get_fft(audio):
     return tf.convert_to_tensor(fft.reshape((fft.shape[0],1)))
 
 def get_spectrogram(audio):
-    _, _, Sxx = signal.spectrogram(audio.numpy(), fs=FS, nperseg=512, mode="magnitude")
-    #Add tiny value to avoid 0
-    scaled = 10*np.log10(Sxx+1e-9)
-    #explicitly show channels
-    new_shape = (scaled.shape[0], scaled.shape[1], 1)
-    return tf.convert_to_tensor(scaled.reshape(new_shape))
+    spectrograms = []
+    for a in audio:
+        _, _, Sxx = signal.spectrogram(a.numpy(), fs=FS, nperseg=512, mode="magnitude")
+        #Add tiny value to avoid 0
+        scaled = 10*np.log10(Sxx+1e-9)
+        #explicitly show channels
+        spectrograms += [scaled]
+    new_shape = (len(audio), spectrograms[0].shape[0], spectrograms[0].shape[1], 1)
+    return tf.convert_to_tensor(np.array(spectrograms).reshape(new_shape), dtype=tf.float32)
 
 """
 Makes an assumption that the noise directory is structured as:
@@ -198,15 +199,25 @@ print("Noise paths contains {} files in {} directories.".format(len(noise_paths)
 print("Voice paths contains {} files.".format(len(audio_paths)))
 print("Found {} clips from the accepted speaker.".format(len(accepted_speaker_audio_paths)))
 
+#Drop samples if we can't evenly do it
+accepted_speaker_audio_paths = accepted_speaker_audio_paths[:SEQUENCE_LENGTH*(len(accepted_speaker_audio_paths)//SEQUENCE_LENGTH)]
+#Reshape into mini sequences
+accepted_speaker_audio_paths = np.array(accepted_speaker_audio_paths).reshape((len(accepted_speaker_audio_paths)//SEQUENCE_LENGTH, SEQUENCE_LENGTH))
+
+#Drop samples if we can't evenly do it
+audio_paths = audio_paths[:SEQUENCE_LENGTH*(len(audio_paths)//SEQUENCE_LENGTH)]
+#Reshape into mini sequences
+audio_paths = np.array(audio_paths).reshape((len(audio_paths)//SEQUENCE_LENGTH, SEQUENCE_LENGTH))
+
 #Split into two sets
 num_split = int(VALIDATION_SPLIT * len(audio_paths))
 num_split2 = int(VALIDATION_SPLIT * len(accepted_speaker_audio_paths))
 
-train_audio_paths = audio_paths[:-num_split] + accepted_speaker_audio_paths[:-num_split2]
-valid_audio_paths = audio_paths[-num_split:] + accepted_speaker_audio_paths[-num_split2:]
+train_audio_paths = np.vstack((audio_paths[:-num_split, :], accepted_speaker_audio_paths[:-num_split2, :]))
+valid_audio_paths = np.vstack((audio_paths[-num_split:, :], accepted_speaker_audio_paths[-num_split2:, :]))
 #Only two classes. 0 for not me, 1 for me
-train_labels = [0]*len(audio_paths[:-num_split]) + [1]*len(accepted_speaker_audio_paths[:-num_split2])
-valid_labels = [0]*len(audio_paths[-num_split:]) + [1]*len(accepted_speaker_audio_paths[-num_split2:])
+train_labels = [0]*len(audio_paths[:-num_split, :]) + [1]*len(accepted_speaker_audio_paths[:-num_split2 , :])
+valid_labels = [0]*len(audio_paths[-num_split:, :]) + [1]*len(accepted_speaker_audio_paths[-num_split2:, :])
 assert len(train_audio_paths) == len(train_labels)
 assert len(valid_audio_paths) == len(valid_labels)
 assert _test_correct_labels(train_audio_paths, train_labels, "pre-shuffle train set")
@@ -215,9 +226,6 @@ assert _test_correct_labels(valid_audio_paths, valid_labels, "pre-shuffle valid 
 num_train_samples = len(train_audio_paths)
 num_valid_samples = len(valid_audio_paths)
 print("{} training samples and {} valid samples".format(num_train_samples,  num_valid_samples))
-
-assert _test_correct_labels(train_audio_paths, train_labels, "post-shuffle train set")
-assert _test_correct_labels(valid_audio_paths, valid_labels, "post-shuffle valid set")
 
 train_ds = to_ds(train_audio_paths, train_labels)
 valid_ds = to_ds(valid_audio_paths, valid_labels)
@@ -238,7 +246,6 @@ train_ds = train_ds.map(
     lambda x, y: (tf.py_function(get_spectrogram, [x], tf.float32), y),
     num_parallel_calls=tf.data.AUTOTUNE
 )
-
 #Normalize all audio clips
 valid_ds = valid_ds.map(
     lambda x, y: (tf.py_function(normalize_audio_volume, [x,-10.0], tf.float32), y),
@@ -264,11 +271,12 @@ valid_ds = valid_ds.repeat().batch(int(BATCH_SIZE*VALIDATION_SPLIT))
 
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
-input_shape = (512//2+1, int(FS/(512-512//8)),1)
+input_shape_cnn = (512//2+1, int(FS/(512-512//8)),1)
+input_shape_rnn = (SEQUENCE_LENGTH, 512//2+1, int(FS/(512-512//8)),1)
 
 #Attempt 4, Recurrent.
-inp = keras.layers.Input(shape=input_shape, name="Input")
-lrs = keras.layers.Conv2D(16, kernel_size=(3,3), strides=3, activation="relu", padding="same")(inp)
+inp_cnn = keras.layers.Input(shape=input_shape_cnn, name="CNN_Input")
+lrs = keras.layers.Conv2D(16, kernel_size=(3,3), strides=3, activation="relu", padding="same")(inp_cnn)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
 lrs = keras.layers.Conv2D(32, kernel_size=(5,5), strides=5, activation="relu", padding="same")(lrs)
@@ -278,21 +286,19 @@ lrs = keras.layers.Conv2D(64, kernel_size=(5,5), strides=5, activation="relu", p
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
 lrs = keras.layers.Dropout(0.2)(lrs)
-out_cnn = keras.layers.Flatten(name="Out CNN")(lrs)
+out_cnn = keras.layers.Flatten(name="Out_CNN")(lrs)
+cnn = keras.models.Model(inputs=inp_cnn, outputs=out_cnn)
+cnn.summary()
 
 #Recurrent
-rnn_start = tf.keras.layers.TimeDistributed(out_cnn)(inp)
-rnn = keras.layers.GRU(128, return_sequences=True)(rnn_start)
-rnn = keras.layers.GRU(256, return_sequences=True)(rnn)
-
-#Dense out
-dns = keras.layers.Dense(128, activation="relu")(rnn)
-dns = keras.layers.Dense(128, activation="relu")(dns)
-dns = keras.layers.Dense(32, activation="relu")(dns)
-dns = keras.layers.Dense(32, activation="relu")(dns)
-dns = keras.layers.Dense(16, activation="relu")(dns)
-outs = keras.layers.Dense(1, activation=None, name="Total Output")(lrs)
-model = keras.models.Model(inputs=inp, outputs=outs)
+inp_rnn = keras.layers.Input(shape=input_shape_rnn, name="RNN_Input")
+rnn_lrs = keras.layers.TimeDistributed(cnn)(inp_rnn)
+rnn_lrs = keras.layers.GRU(128, return_sequences=True)(rnn_lrs)
+rnn_lrs = keras.layers.GRU(256, return_sequences=True)(rnn_lrs)
+rnn_lrs = keras.layers.Flatten()(rnn_lrs)
+rnn_lrs = keras.layers.Dense(128, activation="relu")(rnn_lrs)
+out_rnn = keras.layers.Dense(1, activation=None, name="Out_RNN")(rnn_lrs)
+model = keras.models.Model(inputs=inp_rnn, outputs=out_rnn)
 #Final activation is none since I'm using logits and they need to range \
 #from -inf to inf
 
