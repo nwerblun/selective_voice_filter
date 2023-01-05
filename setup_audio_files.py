@@ -37,12 +37,27 @@ vox_dumps = [
             "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\ductapeguy-20080423-nau_dump", \
             "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\starlite-20070613-fur1_dump"
 ]
+kaggle_roots = [
+            "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches\\Benjamin_Netanyau", \
+            "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches\\Jens_Stoltenberg", \
+            "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches\\Julia_Gillard", \
+            "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches\\Magaret_Thatcher", \
+            "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches\\Nelson_Mandela"
+]
+kaggle_dumps = [
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\Benjamin_Netanyau_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\Jens_Stoltenberg_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\Julia_Gillard_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\Magaret_Thatcher_dump", \
+            "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\Nelson_Mandela_dump", \
+]
 nick_root = "C:\\Users\\NWerblun\\Downloads\\nick"
 nick_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data\\nick_dump"
 nick_test_root = "C:\\Users\\NWerblun\\Downloads\\nick_test"
 nick_test_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\test_data\\nick_test_dump"
 white_noise_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\noise_data\\white_noise"
-
+kaggle_root = "C:\\Users\\NWerblun\\Downloads\\16000_pcm_speeches"
+kaggle_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\voice_data"
 FILE_LEN = 1
 
 def resize_and_generate_spectrograms(root, fs, desired_fs, new_len=1):
@@ -90,11 +105,12 @@ def _wav_to_spectrogram(root, fname, fs, new_fs, new_len, win_size=256, overlap=
     audio_data = audio_data[:new_fs*new_len*(len(audio_data)//(new_fs*new_len))]
     audio_data = audio_data.reshape(len(audio_data)//(new_fs*new_len), new_fs*new_len)
     for ind, clip in enumerate(audio_data):
-        filtered = signal.lfilter(np.array([1,-0.68]), np.array([1]), clip)
+        filtered = signal.filtfilt(np.array([1,-0.68]), np.array([1]), clip)
         f, t, Sxx = signal.spectrogram(filtered, fs=new_fs, nperseg=win_size, noverlap=overlap, window="blackman", nfft=nfft, mode="magnitude", scaling="spectrum")
         normer = LogNorm(vmin=Sxx.max()*5e-4, vmax=Sxx.max(), clip=True)
         sm = cm.ScalarMappable(norm=normer, cmap="magma")
-        x = Image.fromarray(sm.to_rgba(np.flipud(Sxx), bytes=True))
+        rgb = sm.to_rgba(np.flipud(Sxx), bytes=True)[:, :, :3]
+        x = Image.fromarray(rgb)
         x.save(os.path.join(root, os.path.splitext(fname)[0]+"_"+str(ind)+".png"))
     os.remove(os.path.join(root, fname))
 
@@ -133,21 +149,28 @@ def normalize_audio_volume(root, rms_in_dB=-10):
     for s in subdirs:
         normalize_audio_volume(os.path.join(root, s), rms_in_dB)
 
+#Spectrograms are all scaled anyway. No need to normalize?
 print("Working on voice clips...")
+for dir, dump_dir in zip(kaggle_roots, kaggle_dumps):
+    shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
+    add_noise_to_clips(dump_dir, 0.02)
+    #normalize_audio_volume(dump_dir, -10)
+    resize_and_generate_spectrograms(dump_dir, 16000, 16000, FILE_LEN)
+
 for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
     add_noise_to_clips(dump_dir, 0.02)
-    normalize_audio_volume(dump_dir, -10)
+    #normalize_audio_volume(dump_dir, -10)
     resize_and_generate_spectrograms(dump_dir, 44100, 16000, FILE_LEN)
 
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
 add_noise_to_clips(nick_dump, 0.02)
-normalize_audio_volume(nick_dump, -10)
+#normalize_audio_volume(nick_dump, -10)
 resize_and_generate_spectrograms(nick_dump, 44100, 16000, FILE_LEN)
 
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
 add_noise_to_clips(nick_test_dump, 0.02)
-normalize_audio_volume(nick_test_dump, -10)
+#normalize_audio_volume(nick_test_dump, -10)
 resize_and_generate_spectrograms(nick_test_dump, 44100, 16000, FILE_LEN)
 
 print("moving a few examples to test directory...")

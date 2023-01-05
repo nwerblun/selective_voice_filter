@@ -46,7 +46,7 @@ _,s,_ = next(os.walk(root))
 for sub in s:
     _,_,filenames = next(os.walk(os.path.join(root,sub)))
     for f in filenames:
-        if sub == "nick_test_dump":
+        if sub == "nick_test_dump" or sub == "nick_dump":
             all_files.append((os.path.join(root,sub,f), 1))
         else:
             all_files.append((os.path.join(root,sub,f), 0))
@@ -56,7 +56,7 @@ successes = 0
 failed_files = []
 for filename, label in all_files:
     im = Image.open(filename)
-    rgb = np.array(list(im.convert("RGB").getdata()))
+    rgb = np.array(list(im.getdata()))
     time_chunks = int((FS/SPEC_WINDOW_LENGTH) + ((FS-SPEC_OVERLAP)/SPEC_WINDOW_LENGTH))
     rgb = rgb.reshape((
         NFFT//2+1,

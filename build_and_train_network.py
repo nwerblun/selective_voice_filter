@@ -61,7 +61,7 @@ def get_spec_from_path(file_path):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
     #np converted str comes in as a bytes object, need to decode.
     im = Image.open(file_path.numpy().decode('utf-8'))
-    rgb = np.array(list(im.convert("RGB").getdata()))
+    rgb = np.array(list(im.getdata()))
     time_chunks = int((FS/SPEC_WINDOW_LENGTH) + ((FS-SPEC_OVERLAP)/SPEC_WINDOW_LENGTH))
     rgb = rgb.reshape((
         NFFT//2+1,
@@ -73,8 +73,8 @@ def get_spec_from_path(file_path):
 def to_ds(paths, labels):
     paths_ds = tf.data.Dataset.from_tensor_slices(paths)
     labels_ds = tf.data.Dataset.from_tensor_slices(labels)
-    audio_ds = paths_ds.map(lambda x: tf.py_function(get_spec_from_path, [x], tf.uint8))
-    return tf.data.Dataset.zip((audio_ds, labels_ds))
+    spec_ds = paths_ds.map(lambda x: tf.py_function(get_spec_from_path, [x], tf.uint8))
+    return tf.data.Dataset.zip((spec_ds, labels_ds))
 
 """
 Makes an assumption that the voice directory is structured as:
@@ -162,16 +162,19 @@ input_shape = (
 #Attempt 3, non-sequential but way smaller.
 inp = keras.layers.Input(shape=input_shape, name="Input")
 
-lrs = keras.layers.Conv2D(96, kernel_size=(11,11), strides=3, activation="relu", padding="same")(inp)
+lrs = keras.layers.Conv2D(16, kernel_size=(5,5), strides=1, activation="relu", padding="same")(inp)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
-lrs = keras.layers.Conv2D(128, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.Conv2D(32, kernel_size=(3,3), strides=1, activation="relu", padding="same")(lrs)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
-lrs = keras.layers.Conv2D(128, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.Conv2D(64, kernel_size=(3,3), strides=1, activation="relu", padding="same")(lrs)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
-lrs = keras.layers.Conv2D(256, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.Conv2D(64, kernel_size=(3,3), strides=1, activation="relu", padding="same")(lrs)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
+lrs = keras.layers.Conv2D(64, kernel_size=(3,3), strides=1, activation="relu", padding="same")(lrs)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
 lrs = keras.layers.Dropout(0.2)(lrs)
