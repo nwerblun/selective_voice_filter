@@ -45,21 +45,13 @@ white_noise_dump = "C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\data\\
 
 FILE_LEN = 1
 
-def resize_only(root, new_len=1):
+def resize_and_generate_spectrograms(root, fs, desired_fs, new_len=1):
     _, subdirs, filenames = next(os.walk(root))
     for f in filenames:
         if os.path.splitext(f)[1] == ".wav":
-            _split_file(root, f, new_len)
+            _wav_to_spectrogram(root, f, fs, desired_fs, new_len)
     for s in subdirs:
-        resize_only(os.path.join(root, s), new_len)
-
-def resize_and_generate_spectrograms(root, fs, new_len=1):
-    _, subdirs, filenames = next(os.walk(root))
-    for f in filenames:
-        if os.path.splitext(f)[1] == ".wav":
-            _wav_to_spectrogram(root, f, fs, new_len)
-    for s in subdirs:
-        resize_and_generate_spectrograms(os.path.join(root, s), fs, new_len)
+        resize_and_generate_spectrograms(os.path.join(root, s), fs, desired_fs, new_len)
 
 def add_noise_to_clips(root, scale=0.1):
     _, subdirs, filenames = next(os.walk(root))
@@ -80,7 +72,7 @@ def add_noise_to_clips(root, scale=0.1):
     for s in subdirs:
         add_noise_to_clips(os.path.join(root, s), scale)
 
-def _wav_to_spectrogram(root, fname, fs, new_len):
+def _wav_to_spectrogram(root, fname, fs, new_fs, new_len, win_size=256, overlap=128, nfft=256):
     f = wave.open(os.path.join(root, fname), "rb")
     fs = f.getframerate()
     nf = f.getnframes()
@@ -93,12 +85,13 @@ def _wav_to_spectrogram(root, fname, fs, new_len):
         audio_data = (l+r)/2
     elif ch > 2:
         raise ValueError("Cannot handle more than 2 channel audio")
+    audio_data = signal.resample_poly(audio_data, new_fs, fs, window=3.7)
     #Drop any extras to make it a multiple of FS
-    audio_data = audio_data[:fs*new_len*(len(audio_data)//(fs*new_len))]
-    audio_data = audio_data.reshape(len(audio_data)//(fs*new_len), fs*new_len)
+    audio_data = audio_data[:new_fs*new_len*(len(audio_data)//(new_fs*new_len))]
+    audio_data = audio_data.reshape(len(audio_data)//(new_fs*new_len), new_fs*new_len)
     for ind, clip in enumerate(audio_data):
         filtered = signal.lfilter(np.array([1,-0.68]), np.array([1]), clip)
-        f, t, Sxx = signal.spectrogram(filtered, fs=44100, nperseg=256, noverlap=64, window="blackman", nfft=2*256, mode="magnitude", scaling="spectrum")
+        f, t, Sxx = signal.spectrogram(filtered, fs=new_fs, nperseg=win_size, noverlap=overlap, window="blackman", nfft=nfft, mode="magnitude", scaling="spectrum")
         normer = LogNorm(vmin=Sxx.max()*5e-4, vmax=Sxx.max(), clip=True)
         sm = cm.ScalarMappable(norm=normer, cmap="magma")
         x = Image.fromarray(sm.to_rgba(np.flipud(Sxx), bytes=True))
@@ -145,22 +138,20 @@ for dir, dump_dir in zip(vox_roots, vox_dumps):
     shutil.copytree(dir, dump_dir, dirs_exist_ok=True)
     add_noise_to_clips(dump_dir, 0.02)
     normalize_audio_volume(dump_dir, -10)
-    resize_and_generate_spectrograms(dump_dir, 44100, FILE_LEN)
+    resize_and_generate_spectrograms(dump_dir, 44100, 16000, FILE_LEN)
 
 shutil.copytree(nick_root, nick_dump, dirs_exist_ok=True)
 add_noise_to_clips(nick_dump, 0.02)
 normalize_audio_volume(nick_dump, -10)
-resize_and_generate_spectrograms(nick_dump, 44100, FILE_LEN)
+resize_and_generate_spectrograms(nick_dump, 44100, 16000, FILE_LEN)
 
 shutil.copytree(nick_test_root, nick_test_dump, dirs_exist_ok=True)
 add_noise_to_clips(nick_test_dump, 0.02)
 normalize_audio_volume(nick_test_dump, -10)
-resize_and_generate_spectrograms(nick_test_dump, 44100, FILE_LEN)
+resize_and_generate_spectrograms(nick_test_dump, 44100, 16000, FILE_LEN)
 
 print("moving a few examples to test directory...")
-import pdb; pdb.set_trace()
 for dump_dir in vox_dumps:
-    pdb.set_trace()
     os.makedirs(os.path.join("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\test_data", os.path.split(dump_dir)[1]), exist_ok=True)
     _, _, filenames = next(os.walk(dump_dir))
     to_move = filenames[-int(len(filenames) * 0.2):]

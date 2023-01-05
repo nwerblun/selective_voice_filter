@@ -32,10 +32,10 @@ SHUFFLE_SEED = 6233
 BATCH_SIZE = 200
 EPOCHS = 50
 FILE_LEN = 1 #seconds
-FS = 44100 #Hz
+FS = 16000 #Hz
 SPEC_WINDOW_LENGTH = 256
-SPEC_OVERLAP = 64
-NFFT = 256 * 2
+SPEC_OVERLAP = 128
+NFFT = 256
 
 #Helper to verify that the labels match the directory name
 def _test_correct_labels(file_paths, labels, name="set"):
@@ -61,10 +61,11 @@ def get_spec_from_path(file_path):
     #Since using Datasets, input will come in as a tensor object. Convert to np.
     #np converted str comes in as a bytes object, need to decode.
     im = Image.open(file_path.numpy().decode('utf-8'))
-    rgb = np.array(list(Image.convert("RGB").getdata()))
+    rgb = np.array(list(im.convert("RGB").getdata()))
+    time_chunks = int((FS/SPEC_WINDOW_LENGTH) + ((FS-SPEC_OVERLAP)/SPEC_WINDOW_LENGTH))
     rgb = rgb.reshape((
         NFFT//2+1,
-        int(FS/(SPEC_WINDOW_LENGTH-SPEC_OVERLAP)),
+        time_chunks,
         3
     ))
     return tf.convert_to_tensor(rgb, dtype=tf.uint8)
@@ -72,7 +73,7 @@ def get_spec_from_path(file_path):
 def to_ds(paths, labels):
     paths_ds = tf.data.Dataset.from_tensor_slices(paths)
     labels_ds = tf.data.Dataset.from_tensor_slices(labels)
-    audio_ds = paths_ds.map(lambda x: tf.py_function(get_spec_from_path, [x], tf.float32))
+    audio_ds = paths_ds.map(lambda x: tf.py_function(get_spec_from_path, [x], tf.uint8))
     return tf.data.Dataset.zip((audio_ds, labels_ds))
 
 """
@@ -151,34 +152,34 @@ valid_ds = valid_ds.shuffle(buffer_size=int(BATCH_SIZE*VALIDATION_SPLIT) * 6, se
 
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
+time_chunks = int((FS/SPEC_WINDOW_LENGTH) + ((FS-SPEC_OVERLAP)/SPEC_WINDOW_LENGTH))
 input_shape = (
         NFFT//2+1,
-        int(FS/(SPEC_WINDOW_LENGTH-SPEC_OVERLAP)),
+        time_chunks,
         3
     )
 
 #Attempt 3, non-sequential but way smaller.
 inp = keras.layers.Input(shape=input_shape, name="Input")
 
-lrs = keras.layers.Conv2D(16, kernel_size=(5,5), strides=5, activation="relu", padding="same")(inp)
-lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
-
-lrs = keras.layers.Conv2D(32, kernel_size=(5,5), strides=5, activation="relu", padding="same")(lrs)
-lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
-
-lrs = keras.layers.Conv2D(64, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.Conv2D(96, kernel_size=(11,11), strides=3, activation="relu", padding="same")(inp)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
 lrs = keras.layers.Conv2D(128, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
 lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
 
+lrs = keras.layers.Conv2D(128, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
+lrs = keras.layers.Conv2D(256, kernel_size=(3,3), strides=3, activation="relu", padding="same")(lrs)
+lrs = keras.layers.MaxPool2D(pool_size=(2,2), padding="same")(lrs)
+
 lrs = keras.layers.Dropout(0.2)(lrs)
 lrs = keras.layers.Flatten()(lrs)
 
+lrs = keras.layers.Dense(4096, activation="relu")(lrs)
+lrs = keras.layers.Dense(2048, activation="relu")(lrs)
 lrs = keras.layers.Dense(256, activation="relu")(lrs)
-lrs = keras.layers.Dense(128, activation="relu")(lrs)
-lrs = keras.layers.Dense(32, activation="relu")(lrs)
-lrs = keras.layers.Dense(16, activation="relu")(lrs)
 outs = keras.layers.Dense(1, activation=None, name="Output")(lrs)
 model = keras.models.Model(inputs=inp, outputs=outs)
 #Final activation is none since I'm using logits and they need to range \

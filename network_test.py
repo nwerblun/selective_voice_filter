@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow import keras
 import wave
 from scipy import signal
+from PIL import Image
 
 os.system("color") #needed to show colored text
 class bcolors:
@@ -20,6 +21,10 @@ class bcolors:
 from_h5 = True
 latest_arch = 4
 latest_weights = 5
+SPEC_WINDOW_LENGTH = 256
+FS = 16000
+SPEC_OVERLAP = 128
+NFFT = 256
 
 print("Loading model...")
 if from_h5:
@@ -50,30 +55,17 @@ fails = 0
 successes = 0
 failed_files = []
 for filename, label in all_files:
-    f = wave.open(filename, "rb")
-    data = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
-    f.close()
-    data = data.astype(np.float32)
-    rms_audio = np.sqrt(np.mean(data**2))
-    if rms_audio != 0:
-        dBFS = 10*np.log10(rms_audio/(2**15))
-        scaled_speak = data * (10**((-10 - dBFS)/10))
-    else:
-        scaled_speak = data
+    im = Image.open(filename)
+    rgb = np.array(list(im.convert("RGB").getdata()))
+    time_chunks = int((FS/SPEC_WINDOW_LENGTH) + ((FS-SPEC_OVERLAP)/SPEC_WINDOW_LENGTH))
+    rgb = rgb.reshape((
+        NFFT//2+1,
+        time_chunks,
+        3
+    ))
 
-    """
-    fft = np.fft.fft(scaled_speak)
-    #keep only pos half of mag. spec.
-    fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
-    fft = fft.reshape((1,-1))
-    """
-
-    _, _, Sxx = signal.spectrogram(scaled_speak, fs=44100, nperseg=512, mode="magnitude")
-    #Add tiny value to avoid 0
-    scaled = 10*np.log10(Sxx+1e-9)
-    #explicitly state 1 batch because predict is stupid
-    new_shape = (1, scaled.shape[0], scaled.shape[1])
-    pred = model.predict(scaled.reshape(new_shape), batch_size=1)
+    new_shape = (1, rgb.shape[0], rgb.shape[1], rgb.shape[2])
+    pred = model.predict(rgb.reshape(new_shape), batch_size=1)
 
     strg = "Prediction for {}: {}, sigmoid out: {}".format(filename, pred, tf.keras.activations.sigmoid(pred))
     spaces = " "*(175 - len(strg))
