@@ -1,18 +1,15 @@
 import pyaudio
-import wave
-import os
 import time
 import numpy as np
 from scipy import signal
-import tensorflow.compat.v1 as tf
-import threading
+#import tensorflow.compat.v1 as tf
+from tensorflow import keras
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 from PIL import Image
 
-cls = lambda : os.system("cls")
 pa = pyaudio.PyAudio()
-#model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
+model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
 sample_format = pyaudio.paInt16
 channels = 1
 fs = 16000
@@ -24,17 +21,19 @@ PREDICTION = -float("inf")
 time_chunks = int((16000/256) + ((16000-128)/256))
 #Two bytes per sample, so need double the length. 1 second + 1 buffer
 QUEUE_fs = bytearray(88200+4096)
-queue_lock = threading.Lock()
 
-sess=tf.InteractiveSession()
-frozen_graph="./frozen_model.pb"
-with tf.gfile.GFile(frozen_graph, "rb") as f:
-      graph_def = tf.GraphDef()
-      graph_def.ParseFromString(f.read())
-sess.graph.as_default()
-tf.import_graph_def(graph_def)
-input_tensor = sess.graph.get_tensor_by_name("x:0")
-output_tensor = sess.graph.get_tensor_by_name("Identity:0")
+
+# Load keras model as a TF v1 graph with no eager execution
+# see here: https://ksingh7.medium.com/part-iii-convert-keras-model-to-tensorflow-frozen-graph-model-a6aa6b1aaeee
+# sess=tf.InteractiveSession()
+# frozen_graph="./frozen_model.pb"
+# with tf.gfile.GFile(frozen_graph, "rb") as f:
+#       graph_def = tf.GraphDef()
+#       graph_def.ParseFromString(f.read())
+# sess.graph.as_default()
+# tf.import_graph_def(graph_def)
+# input_tensor = sess.graph.get_tensor_by_name("x:0")
+# output_tensor = sess.graph.get_tensor_by_name("Identity:0")
 
 def callback_both(in_data, frame_count, time_info, status_flags):
     global QUEUE_fs
@@ -65,13 +64,13 @@ def callback_both(in_data, frame_count, time_info, status_flags):
         time_chunks,
         3
     ))
-    p9 = time.perf_counter_ns()
-    # PREDICTION = model.predict(rgb, batch_size=1, verbose=0)
-    PREDICTION = sess.run(output_tensor, {'x:0': rgb})
-    p10 = time.perf_counter_ns()
+    # p9 = time.perf_counter_ns()
+    PREDICTION = model(rgb, training=False)
+    # PREDICTION = sess.run(output_tensor, {'x:0': rgb})
+    # p10 = time.perf_counter_ns()
     sig = tf.keras.activations.sigmoid(PREDICTION)
-    p11 = time.perf_counter_ns()
-    print("\n"*4+"PRED: {}\nSIGM: {}".format(PREDICTION, sig))
+    # p11 = time.perf_counter_ns()
+    # print("\n"*4+"PRED: {}\nSIGM: {}".format(PREDICTION, sig))
     # print("Queue ops: {:2.2f}ms".format(1e-6 * (p1-p0)))
     # print("Resample: {:2.2f}ms".format(1e-6 * (p2-p1)))
     # print("Filter: {:2.2f}ms".format(1e-6 * (p3-p2)))
