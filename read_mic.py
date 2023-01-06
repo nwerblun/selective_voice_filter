@@ -4,116 +4,95 @@ import os
 import time
 import numpy as np
 from scipy import signal
-import tensorflow as tf
-from tensorflow import keras
+import tensorflow.compat.v1 as tf
 import threading
+from matplotlib.colors import LogNorm
+import matplotlib.cm as cm
+from PIL import Image
 
 cls = lambda : os.system("cls")
 pa = pyaudio.PyAudio()
-model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
+#model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
 sample_format = pyaudio.paInt16
 channels = 1
-fs = 44100
-seconds = 1
-feedthrough_chunk_size_read = 1024 # ~23ms of data
-feedthrough_chunk_size_write = 512
-#/2 because it's signed and we want only >0 vals since we compare to RMS
-max_possible = (2**16)/2
-f1, f2 = 20, 21000
-#Filter with no gain
-window = signal.firwin(3, [f1, f2], pass_zero=False, fs=fs)
+fs = 16000
+feedthrough_chunk_size = 2048
 
-GO = True
 dBFS = 0
 PREDICTION = -float("inf")
-
-#mag = 10**(dB/10) * scale. 0.1 comes from using -10dB, 2**15 = 2**16/2
-#the comma is not a mistake. Queue store 1 sec. of data init to white noise
-QUEUE = np.random.normal(loc=0, scale=(0.1 * (2**15)), size=(fs,)).astype(np.float32)
-PRED_THRESH = 0.97
+#Compute once and reuse
+time_chunks = int((16000/256) + ((16000-128)/256))
+#Two bytes per sample, so need double the length. 1 second + 1 buffer
+QUEUE_fs = bytearray(88200+4096)
 queue_lock = threading.Lock()
 
-def callback_read(in_data, frame_count, time_info, status_flags):
-    global QUEUE
-    in_data_np = np.frombuffer(in_data, dtype=np.int16).astype(np.float32)
-    with queue_lock:
-        QUEUE = np.append(QUEUE[feedthrough_chunk_size_read:], in_data_np)
-    return (None, pyaudio.paContinue)
+sess=tf.InteractiveSession()
+frozen_graph="./frozen_model.pb"
+with tf.gfile.GFile(frozen_graph, "rb") as f:
+      graph_def = tf.GraphDef()
+      graph_def.ParseFromString(f.read())
+sess.graph.as_default()
+tf.import_graph_def(graph_def)
+input_tensor = sess.graph.get_tensor_by_name("x:0")
+output_tensor = sess.graph.get_tensor_by_name("Identity:0")
 
-def callback_write(in_data, frame_count, time_info, status_flags):
-    global QUEUE
-    global dBFS
+def callback_both(in_data, frame_count, time_info, status_flags):
+    global QUEUE_fs
     global PREDICTION
-    with queue_lock:
-        temp_queue = QUEUE[:]
-    rms_audio = np.sqrt(np.mean(temp_queue**2))
-    if rms_audio != 0:
-        dBFS = 10*np.log10(rms_audio/32768) #again, assuming 16 bits
-        scaled_speak = temp_queue * (10**((-10 - dBFS)/10))
+    # p0 = time.perf_counter_ns()
+    #Cannot do this in one line with byte arrays
+    QUEUE_fs = QUEUE_fs[4096:]
+    QUEUE_fs.extend(in_data)
+    np_data = np.frombuffer(QUEUE_fs[:88200], dtype=np.int16).astype(np.float32)
+    # p1 = time.perf_counter_ns()
+    audio_data = signal.resample_poly(np_data, 16000, 44100, window=3.7)
+    # p2 = time.perf_counter_ns()
+    filtered = signal.filtfilt(np.array([1,-0.68]), np.array([1]), audio_data)
+    # p3 = time.perf_counter_ns()
+    _, _, Sxx = signal.spectrogram(filtered, fs=16000, nperseg=256, noverlap=128, window="blackman", nfft=256, mode="magnitude", scaling="spectrum")
+    # p4 = time.perf_counter_ns()
+    normer = LogNorm(vmin=Sxx.max()*5e-4, vmax=Sxx.max(), clip=True)
+    # p5 = time.perf_counter_ns()
+    sm = cm.ScalarMappable(norm=normer, cmap="magma")
+    # p6 = time.perf_counter_ns()
+    rgb = Image.fromarray(sm.to_rgba(np.flipud(Sxx), bytes=True))
+    # p7 = time.perf_counter_ns()
+    rgb = np.array(list(rgb.convert("RGB").getdata()))
+    # p8 = time.perf_counter_ns()
+    rgb = rgb.reshape((
+        1,
+        256//2+1,
+        time_chunks,
+        3
+    ))
+    p9 = time.perf_counter_ns()
+    # PREDICTION = model.predict(rgb, batch_size=1, verbose=0)
+    PREDICTION = sess.run(output_tensor, {'x:0': rgb})
+    p10 = time.perf_counter_ns()
+    sig = tf.keras.activations.sigmoid(PREDICTION)
+    p11 = time.perf_counter_ns()
+    print("\n"*4+"PRED: {}\nSIGM: {}".format(PREDICTION, sig))
+    # print("Queue ops: {:2.2f}ms".format(1e-6 * (p1-p0)))
+    # print("Resample: {:2.2f}ms".format(1e-6 * (p2-p1)))
+    # print("Filter: {:2.2f}ms".format(1e-6 * (p3-p2)))
+    # print("Spectrogram: {:2.2f}ms".format(1e-6 * (p4-p3)))
+    # print("Normalize: {:2.2f}ms".format(1e-6 * (p5-p4)))
+    # print("Cmap: {:2.2f}ms".format(1e-6 * (p6-p5)))
+    # print("To image: {:2.2f}ms".format(1e-6 * (p7-p6)))
+    # print("To rgb array: {:2.2f}ms".format(1e-6 * (p8-p7)))
+    # print("Reshape: {:2.2f}ms".format(1e-6 * (p9-p8)))
+    # print("Predict: {:2.2f}ms".format(1e-6 * (p10-p9)))
+    # print("Sigmoid: {:2.2f}ms".format(1e-6 * (p11-p10)))
+    if sig >= 0.97:
+        # p12 = time.perf_counter_ns()
+        # print("Compare: {:2.2f}ms".format(1e-6 * (p12-p11)))
+        # print("Total: {:2.2f}ms".format(1e-6 * (p12-p0)))
+        return (in_data, pyaudio.paContinue)
     else:
-        scaled_speak = temp_queue
-    fft = np.fft.fft(scaled_speak)
-    #keep only pos half of mag. spec.
-    fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
-    fft = fft.reshape((1,-1))
-    PREDICTION = float(tf.keras.activations.sigmoid(model.predict(fft, batch_size=1, verbose=0)))
-    if PREDICTION == 1:
-        return (temp_queue[-feedthrough_chunk_size_write:].astype(np.int16).tobytes(), pyaudio.paContinue)
-    else:
-        return(np.zeros((feedthrough_chunk_size_write,)).astype(np.int16).tobytes(), pyaudio.paContinue)
-
-
-def make_prediction(stop):
-    global PREDICTION
-    while True:
-        if stop():
-            break
-        with queue_lock:
-            temp_queue = QUEUE[:]
-        rms_audio = np.sqrt(np.mean(temp_queue**2))
-        if rms_audio != 0:
-            db = 10*np.log10(rms_audio/(2**15))
-            scaled_speak = temp_queue * (10**((-10 - db)/10))
-        else:
-            scaled_speak = temp_queue
-        fft = np.fft.fft(temp_queue)
-        #keep only pos half of mag. spec.
-        fft = np.abs(fft).astype(np.float32)[:len(fft)//2]
-        fft = fft.reshape((1,-1))
-        PREDICTION = float(tf.keras.activations.sigmoid(model.predict(fft, batch_size=1, verbose=0)))
-
-def thresh_monitor(stop):
-    strt = time.time()
-    silent_time_thresh = 3000 #3 seconds
-    triggered = False
-    while True:
-        if stop():
-            break
-
-        if silent_time_thresh - strt > 0 and dBFS >= -9:
-            PRED_THRESH = -float("inf")
-        else:
-            PRED_THRESH = 4000
-
-        if dBFS >= -9:
-            strt = float("inf")
-            triggered = False
-        elif not triggered and dBFS <= -20:
-            triggered = True
-            strt = time.time()
-
-def status_print(stop):
-    #Don't need globals because we are just reading them
-    while True:
-        if stop():
-            break
-        cls()
-        print("Press CTRL+C To End", \
-                "\ndBFS Reading: {:2.2f}".format(dBFS), \
-                "\nCurrent Prediction (1 sec. delayed): {:2.2f}".format(PREDICTION)
-        )
-        time.sleep(0.05)
-
+        # p12 = time.perf_counter_ns()
+        # print("Compare: {}ms".format(1e-6 * (p12-p11)))
+        # print("Total with prints: {:2.2f}ms".format(1e-6 * (p12-p0)))
+        return (np.zeros(4096,).tobytes(), pyaudio.paContinue)
 
 """
 Changes when restarting computer
@@ -122,36 +101,20 @@ Write to VB cable input, and it gets carried to VB cable output. Use VB cable ou
 'defaultLowInputLatency': 0.09, 'defaultLowOutputLatency': 0.09, 'defaultHighInputLatency': 0.18,
 'defaultHighOutputLatency': 0.18, 'defaultSampleRate': 44100.0}
 """
-stream_write = pa.open(format=sample_format,
+stream = pa.open(format=sample_format,
                     channels=channels,
-                    rate=fs,
-                    frames_per_buffer=feedthrough_chunk_size_write,
-                    input=False,
+                    rate=44100,
+                    frames_per_buffer=feedthrough_chunk_size,
+                    input=True,
                     output=True,
                     output_device_index=11,
-                    stream_callback=callback_write)
-
-stream_read = pa.open(format=sample_format,
-                    channels=channels,
-                    rate=fs,
-                    frames_per_buffer=feedthrough_chunk_size_read,
-                    input=True,
-                    output=False,
-                    stream_callback=callback_read)
+                    stream_callback=callback_both)
 
 try:
-    stop_threads = False
-    mon = threading.Thread(target=status_print, args=(lambda : stop_threads,), daemon=True)
-    #predictor = threading.Thread(target=make_prediction, args=(lambda : stop_threads,), daemon=True)
-    mon.start()
-    #predictor.start()
     while True:
-        time.sleep(0.2)
+        time.sleep(0.6)
 except KeyboardInterrupt:
     print("Killing Process")
-    stop_threads = True
-    stream_write.stop_stream()
-    stream_write.close()
-    stream_read.stop_stream()
-    stream_read.close()
+    stream.stop_stream()
+    stream.close()
     pa.terminate()

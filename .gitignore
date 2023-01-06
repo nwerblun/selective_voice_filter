@@ -3,6 +3,7 @@ data/
 extra_data_unused/
 test_data/
 tmp/
+frozen_models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
