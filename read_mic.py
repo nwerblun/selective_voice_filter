@@ -3,12 +3,13 @@ import time
 import os
 import numpy as np
 from scipy import signal
-#import tensorflow.compat.v1 as tf
 from tensorflow import keras
 from matplotlib.colors import LogNorm
 import matplotlib.cm as cm
 from PIL import Image
 from multiprocessing import Process, Value
+import tkinter as tk
+from tkinter import ttk
 
 pa = pyaudio.PyAudio()
 model = keras.models.load_model("C:\\Users\\NWerblun\\Desktop\\selective_voice_filter\\model.h5")
@@ -21,90 +22,162 @@ PREDICTION = -float("inf")
 time_chunks = int((16000/256) + ((16000-128)/256))
 #Two bytes per sample, so need double the length. 1 second + 1 buffer
 QUEUE_fs = bytearray(88200+4096)
-MAX_MOMENTUM = 15
-last_n_pred = Value('i', -5)
-last_process_time = Value('d', 0.0)
+MAX_MOMENTUM = 5
+last_n_pred = -5
+last_process_time = 0
+
+stream = None
+stop = 0
+root = tk.Tk()
+output_devices = {}
+FILTER_ON = True
+MIC_MUTED = False
 
 def callback_both(in_data, frame_count, time_info, status_flags):
     global QUEUE_fs
     global PREDICTION
     global last_n_pred
     global last_process_time
+
     p0 = time.perf_counter_ns()
+    if MIC_MUTED:
+        last_process_time = time.perf_counter_ns() - p0
+        return (np.zeros(4096,).tobytes(), pyaudio.paContinue)
+
+    if not FILTER_ON:
+        last_process_time = time.perf_counter_ns() - p0
+        return (in_data, pyaudio.paContinue)
+
     #Cannot do this in one line with byte arrays
     QUEUE_fs = QUEUE_fs[4096:]
     QUEUE_fs.extend(in_data)
     np_data = np.frombuffer(QUEUE_fs[:88200], dtype=np.int16).astype(np.float32)
-    # p1 = time.perf_counter_ns()
     audio_data = signal.resample_poly(np_data, 16000, 44100, window=3.7)
-    # p2 = time.perf_counter_ns()
     filtered = signal.filtfilt(np.array([1,-0.68]), np.array([1]), audio_data)
-    # p3 = time.perf_counter_ns()
     _, _, Sxx = signal.spectrogram(filtered, fs=16000, nperseg=256, noverlap=128, window="blackman", nfft=256, mode="magnitude", scaling="spectrum")
-    # p4 = time.perf_counter_ns()
     normer = LogNorm(vmin=Sxx.max()*5e-4, vmax=Sxx.max(), clip=True)
-    # p5 = time.perf_counter_ns()
     sm = cm.ScalarMappable(norm=normer, cmap="magma")
-    # p6 = time.perf_counter_ns()
     rgb = Image.fromarray(sm.to_rgba(np.flipud(Sxx), bytes=True))
-    # p7 = time.perf_counter_ns()
     rgb = np.array(list(rgb.convert("RGB").getdata()))
-    # p8 = time.perf_counter_ns()
     rgb = rgb.reshape((
         1,
         256//2+1,
         time_chunks,
         3
     ))
-    # p9 = time.perf_counter_ns()
     PREDICTION = model(rgb, training=False)
-    # PREDICTION = sess.run(output_tensor, {'x:0': rgb})
-    # p10 = time.perf_counter_ns()
     sig = keras.activations.sigmoid(PREDICTION)
-    # p11 = time.perf_counter_ns()
-    # print("\n"*4+"PRED: {}\nSIGM: {}".format(PREDICTION, sig))
-    # print("Queue ops: {:2.2f}ms".format(1e-6 * (p1-p0)))
-    # print("Resample: {:2.2f}ms".format(1e-6 * (p2-p1)))
-    # print("Filter: {:2.2f}ms".format(1e-6 * (p3-p2)))
-    # print("Spectrogram: {:2.2f}ms".format(1e-6 * (p4-p3)))
-    # print("Normalize: {:2.2f}ms".format(1e-6 * (p5-p4)))
-    # print("Cmap: {:2.2f}ms".format(1e-6 * (p6-p5)))
-    # print("To image: {:2.2f}ms".format(1e-6 * (p7-p6)))
-    # print("To rgb array: {:2.2f}ms".format(1e-6 * (p8-p7)))
-    # print("Reshape: {:2.2f}ms".format(1e-6 * (p9-p8)))
-    # print("Predict: {:2.2f}ms".format(1e-6 * (p10-p9)))
-    # print("Sigmoid: {:2.2f}ms".format(1e-6 * (p11-p10)))
     if sig >= 0.97:
-        last_n_pred.value = last_n_pred.value + 1 if last_n_pred.value < MAX_MOMENTUM else MAX_MOMENTUM
+        last_n_pred = last_n_pred + 1 if last_n_pred < MAX_MOMENTUM else MAX_MOMENTUM
         p12 = time.perf_counter_ns()
-        last_process_time.value = p12-p0
-        # print("Compare: {:2.2f}ms".format(1e-6 * (p12-p11)))
-        # print("Total: {:2.2f}ms".format(1e-6 * (p12-p0)))
-        if last_n_pred.value > 0:
+        last_process_time = p12-p0
+        if last_n_pred >= 0:
             return (in_data, pyaudio.paContinue)
         else:
             return (np.zeros(4096,).tobytes(), pyaudio.paContinue)
     else:
-        last_n_pred.value = last_n_pred.value - 1 if last_n_pred.value > -MAX_MOMENTUM else -MAX_MOMENTUM
+        last_n_pred = last_n_pred - 1 if last_n_pred > -MAX_MOMENTUM else -MAX_MOMENTUM
         p12 = time.perf_counter_ns()
-        last_process_time.value = p12-p0
-        # print("Compare: {}ms".format(1e-6 * (p12-p11)))
-        # print("Total with prints: {:2.2f}ms".format(1e-6 * (p12-p0)))
-        if last_n_pred.value <= 0:
+        last_process_time = p12-p0
+        if last_n_pred <= 0:
             return (np.zeros(4096,).tobytes(), pyaudio.paContinue)
         else:
             return (in_data, pyaudio.paContinue)
 
-def monitor(stop, last_n_pred, last_process_time):
-    while True:
-        if stop.value:
-            break
-        pass
-        os.system("cls")
-        print("Last process time: {}ms".format(1e-6*last_process_time.value))
-        print("Current momentum {}".format(last_n_pred.value))
-        print("Active? {}".format(last_n_pred.value>0))
-        time.sleep(0.1)
+def quit():
+    global stop
+    stop = 1
+    print("Killing Process")
+    stream.stop_stream()
+    stream.close()
+    pa.terminate()
+    return
+
+def process_time_update_loop(stop, label):
+    next = None
+    if stop():
+        if next:
+            root.after_cancel(next)
+        return
+    else:
+        label["text"] = "Last Processing Time: {:.3f}ms".format(last_process_time*1e-6)
+        next = root.after(100, process_time_update_loop, stop, label)
+    return
+
+def last_prediction_update_loop(stop, label, label2):
+    pred = float(PREDICTION)
+    next = None
+    if stop():
+        if next:
+            root.after_cancel(next)
+        return
+    else:
+        label["text"] = "Last Prediction: {:.3f}".format(pred)
+        label2["text"] = "Sigmoid of Last Prediction: {:.3f}".format(keras.activations.sigmoid(pred))
+        next = root.after(100, last_prediction_update_loop, stop, label, label2)
+    return
+
+def momentum_update_loop(stop, label):
+    next = None
+    if stop():
+        if next:
+            root.after_cancel(next)
+        return
+    else:
+        label["text"] = "Current Momentum: {}".format(last_n_pred)
+        next = root.after(100, momentum_update_loop, stop, label)
+    return
+
+def open_new_stream_close_old(output_index):
+    global stream
+    if stream:
+        stream.stop_stream()
+        stream.close()
+    stream = pa.open(format=sample_format,
+                channels=channels,
+                rate=44100,
+                frames_per_buffer=feedthrough_chunk_size,
+                input=True,
+                output=True,
+                output_device_index=output_index,
+                stream_callback=callback_both)
+    return
+
+def device_change(event):
+    name = combo.get()
+    open_new_stream_close_old(output_devices[name])
+    return
+
+def momentum_change(event):
+    global MAX_MOMENTUM
+    MAX_MOMENTUM = event.widget.get()
+    return
+
+def press_power_button():
+    global FILTER_ON
+    if FILTER_ON:
+        new_im = tk.PhotoImage(file = r".\red_pwr.png")
+        enable_button.configure(image=new_im)
+        enable_button.photo = new_im
+    else:
+        new_im = tk.PhotoImage(file = r".\green_pwr.png")
+        enable_button.configure(image=new_im)
+        enable_button.photo = new_im
+    FILTER_ON = not FILTER_ON
+    return
+
+def press_mute_button():
+    global MIC_MUTED
+    if MIC_MUTED:
+        new_im = tk.PhotoImage(file = r".\mic_on.png")
+        mic_en_button.configure(image=new_im)
+        mic_en_button.photo = new_im
+    else:
+        new_im = tk.PhotoImage(file = r".\mic_off.png")
+        mic_en_button.configure(image=new_im)
+        mic_en_button.photo = new_im
+    MIC_MUTED = not MIC_MUTED
+    return
 
 """
 Changes when restarting computer
@@ -115,24 +188,93 @@ Write to VB cable input, and it gets carried to VB cable output. Use VB cable ou
 """
 
 if __name__ == "__main__":
-    stream = pa.open(format=sample_format,
-                        channels=channels,
-                        rate=44100,
-                        frames_per_buffer=feedthrough_chunk_size,
-                        input=True,
-                        output=True,
-                        output_device_index=8,
-                        stream_callback=callback_both)
-
     try:
-        stop = Value('i', 0)
-        mon = Process(target=monitor, args=(stop, last_n_pred, last_process_time))
-        mon.start()
-        while True:
-            time.sleep(0.6)
+        #root.geometry('500x500')
+        frm = tk.Frame(root, relief=tk.RAISED, borderwidth=1)
+        frm.grid(column=0, row=0, padx=3, pady=1)
+
+        frm_title = tk.Label(frm, text="Debug Info")
+        frm_title.grid(column=0, row=0, sticky="n")
+
+        process_time_label = tk.Label(frm, text="Last process time: {}".format(last_process_time))
+        process_time_label.grid(column=0, row=1, sticky="w")
+
+        momentum_label = tk.Label(frm, text="Momentum: {}".format(last_n_pred))
+        momentum_label.grid(column=0, row=2, sticky="w")
+
+        pred_label = tk.Label(frm, text="Last Prediction: {}".format(PREDICTION))
+        pred_label.grid(column=0, row=3, sticky="w")
+
+        sig_pred_label = tk.Label(frm, text="Sigmoid of Last Prediction: {}".format(keras.activations.sigmoid(PREDICTION)))
+        sig_pred_label.grid(column=0, row=4, sticky="w")
+
+        dropdown_frm = tk.Frame(root, relief=tk.RAISED, borderwidth=1)
+        dropdown_frm.grid(column=1, row=0, padx=3, pady=1)
+
+        dropdown_title_label = tk.Label(dropdown_frm, text="Output Device Select")
+        dropdown_title_label.grid(column=0, row=0, sticky="n")
+
+        info = pa.get_host_api_info_by_index(0)
+        numdevices = info.get('deviceCount')
+        default_choice = ""
+        for i in range(0, numdevices):
+            if (pa.get_device_info_by_host_api_device_index(0, i).get('maxOutputChannels')) > 0:
+                name = pa.get_device_info_by_host_api_device_index(0, i).get('name')
+                if "VB" in name:
+                    default_choice = name
+                output_devices[name] = i
+
+        combo = ttk.Combobox(
+            dropdown_frm,
+            state="readonly",
+            values = list(output_devices.keys())
+        )
+        combo.bind("<<ComboboxSelected>>", device_change)
+        combo.grid(column=0, row=1, sticky="n")
+        combo.set(default_choice)
+
+        stream = pa.open(format=sample_format,
+                            channels=channels,
+                            rate=44100,
+                            frames_per_buffer=feedthrough_chunk_size,
+                            input=True,
+                            output=True,
+                            output_device_index=output_devices[default_choice],
+                            stream_callback=callback_both)
+
+        slider_frame = tk.Frame(root)
+        slider_frame.grid(column=0, row=1, columnspan=2, padx=2, pady=0, sticky="n")
+        slider_label = tk.Label(slider_frame, text="Max Momentum")
+        slider_label.grid(column=0, row=0, pady=1, sticky="n")
+
+        slider_bar = tk.Scale(slider_frame, from_=0, to=50, orient="horizontal", length=350)
+        slider_bar.grid(column=0, row=1, pady=1, sticky="n")
+        slider_bar.set(5)
+        slider_bar.bind("<ButtonRelease-1>", momentum_change)
+
+        buttons_frame = tk.Frame(root)
+        buttons_frame.grid(column=0, row=2, columnspan=2, padx=3, pady=1, sticky="n")
+
+        pwr_on = tk.PhotoImage(file = r".\green_pwr.png")
+        enable_button = ttk.Button(buttons_frame, image=pwr_on, command=press_power_button)
+        enable_button.grid(column=0, row=0, padx=15, pady=5)
+
+        mic_on = tk.PhotoImage(file = r".\mic_on.png")
+        mic_en_button = ttk.Button(buttons_frame, image=mic_on, command=press_mute_button)
+        mic_en_button.grid(column=1, row=0, padx=15, pady=5)
+
+        process_time_update_loop(lambda : stop, process_time_label)
+        momentum_update_loop(lambda : stop, momentum_label)
+        last_prediction_update_loop(lambda : stop, pred_label, sig_pred_label)
+
+        root.resizable(0, 0)
+        root.title("Selective Voice Filter")
+        root.mainloop()
+        quit()
     except KeyboardInterrupt:
         print("Killing Process")
-        stop.value = 1
+        stop = 1
+        root.destroy()
         stream.stop_stream()
         stream.close()
         pa.terminate()
