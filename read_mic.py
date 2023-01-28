@@ -156,12 +156,12 @@ def momentum_change(event):
 def press_power_button():
     global FILTER_ON
     if FILTER_ON:
-        new_im = tk.PhotoImage(file = r".\red_pwr.png")
+        new_im = tk.PhotoImage(file = r".\images\red_pwr.png")
         enable_button.configure(image=new_im)
-        enable_button.photo = new_im
+        enable_button.photo = new_im #need this to avoid GC removing the link
     else:
-        new_im = tk.PhotoImage(file = r".\green_pwr.png")
-        enable_button.configure(image=new_im)
+        new_im = tk.PhotoImage(file = r".\images\green_pwr.png")
+        enable_button.configure(image=new_im) #need this to avoid GC removing the link
         enable_button.photo = new_im
     FILTER_ON = not FILTER_ON
     return
@@ -169,13 +169,13 @@ def press_power_button():
 def press_mute_button():
     global MIC_MUTED
     if MIC_MUTED:
-        new_im = tk.PhotoImage(file = r".\mic_on.png")
+        new_im = tk.PhotoImage(file = r".\images\mic_on.png")
         mic_en_button.configure(image=new_im)
-        mic_en_button.photo = new_im
+        mic_en_button.photo = new_im #need this to avoid GC removing the link
     else:
-        new_im = tk.PhotoImage(file = r".\mic_off.png")
+        new_im = tk.PhotoImage(file = r".\images\mic_off.png")
         mic_en_button.configure(image=new_im)
-        mic_en_button.photo = new_im
+        mic_en_button.photo = new_im #need this to avoid GC removing the link
     MIC_MUTED = not MIC_MUTED
     return
 
@@ -255,11 +255,11 @@ if __name__ == "__main__":
         buttons_frame = tk.Frame(root)
         buttons_frame.grid(column=0, row=2, columnspan=2, padx=3, pady=1, sticky="n")
 
-        pwr_on = tk.PhotoImage(file = r".\green_pwr.png")
+        pwr_on = tk.PhotoImage(file = r".\images\green_pwr.png")
         enable_button = ttk.Button(buttons_frame, image=pwr_on, command=press_power_button)
         enable_button.grid(column=0, row=0, padx=15, pady=5)
 
-        mic_on = tk.PhotoImage(file = r".\mic_on.png")
+        mic_on = tk.PhotoImage(file = r".\images\mic_on.png")
         mic_en_button = ttk.Button(buttons_frame, image=mic_on, command=press_mute_button)
         mic_en_button.grid(column=1, row=0, padx=15, pady=5)
 
