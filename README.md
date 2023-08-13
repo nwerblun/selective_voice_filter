@@ -4,6 +4,17 @@ This program requires a virtual audio cable to work, as your mic data needs to b
 
 I used (and recommend) [this one](https://vb-audio.com/Cable/)
 
+Libraries used (possibly missed one or two) are:
+- `pyaudio`
+- `tensorflow v2.10.1`
+- `numpy`
+- `PIL Fork`
+- `wave`
+- `matplotlib`
+- `scipy`
+
+The version of most libs are not important **except** tensorflow.
+
 ## selective_voice_filter
 
 Main file to run is read_mic.py which will launch a GUI.
